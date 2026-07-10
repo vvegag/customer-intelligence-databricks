@@ -18,19 +18,56 @@
 # COMMAND ----------
 
 # DBTITLE 1,Setup
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC import mlflow
-# MAGIC import mlflow.sklearn
-# MAGIC from pyspark.sql import functions as F
-# MAGIC import pandas as pd
-# MAGIC from sklearn.model_selection import train_test_split
-# MAGIC from xgboost import XGBClassifier
-# MAGIC from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
-# MAGIC import warnings
-# MAGIC warnings.filterwarnings('ignore')
-# MAGIC
-# MAGIC print("✓ Setup OK")
+# Configurações globais do projeto (inline)
+import os
+from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+import pandas as pd
+import numpy as np
+
+# Configs
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
+
+# Helper functions
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+def get_latest_model_version(model_name):
+    from mlflow.tracking import MlflowClient
+    client = MlflowClient()
+    try:
+        versions = client.search_model_versions(f"name='{model_name}'")
+        if versions:
+            return max([int(v.version) for v in versions])
+    except:
+        pass
+    return None
+
+# ML imports
+import mlflow
+import mlflow.sklearn
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
+import warnings
+warnings.filterwarnings('ignore')
+
+print("✓ Setup OK")
+print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
@@ -111,4 +148,5 @@ print(f"\nDistribuição:")
 print(df_scores["propensity_category"].value_counts())
 
 # COMMAND ----------
+
 

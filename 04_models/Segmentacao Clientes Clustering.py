@@ -17,17 +17,35 @@
 # COMMAND ----------
 
 # DBTITLE 1,Setup
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC from pyspark.sql import functions as F
-# MAGIC import pandas as pd
-# MAGIC import numpy as np
-# MAGIC from sklearn.preprocessing import StandardScaler
-# MAGIC from sklearn.cluster import KMeans
-# MAGIC import warnings
-# MAGIC warnings.filterwarnings('ignore')
-# MAGIC
-# MAGIC print("✓ Setup OK")
+# Configurações inline
+from pyspark.sql import functions as F
+import pandas as pd
+import numpy as np
+
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import warnings
+warnings.filterwarnings('ignore')
+
+print("✓ Setup OK")
+print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
@@ -148,4 +166,5 @@ df_segment_insights.show(truncate=False)
 print("\n✅ Segmentação completa! Use para marketing direcionado.")
 
 # COMMAND ----------
+
 

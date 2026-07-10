@@ -20,13 +20,48 @@
 # COMMAND ----------
 
 # DBTITLE 1,Configuração
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC from pyspark.sql import functions as F, Window
-# MAGIC from pyspark.sql.types import *
-# MAGIC from datetime import datetime, timedelta
-# MAGIC
-# MAGIC print("✓ Configuração carregada")
+# Configurações globais do projeto (inline - sem usar %run)
+import os
+from datetime import datetime, timedelta
+import numpy as np
+import pandas as pd
+from pyspark.sql import functions as F, Window
+from pyspark.sql.types import *
+import random
+
+# Configurações de catálogo e schema
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+
+# Configurações MLflow
+MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+
+# Configurações gerais
+DATA_PATH = "/FileStore/customer_intelligence/data"
+MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
+
+# Helper functions
+def get_full_table_name(schema, table):
+    """Retorna nome completo da tabela"""
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    """Salva DataFrame como tabela Delta"""
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+print("✓ Configuração carregada")
+print(f"  Catalog: {CATALOG}")
+print(f"  Bronze: {SCHEMA_BRONZE}")
+print(f"  Silver: {SCHEMA_SILVER}")
+print(f"  Gold: {SCHEMA_GOLD}")
 
 # COMMAND ----------
 
@@ -290,4 +325,5 @@ print("✓ GOLD LAYER COMPLETA - PRONTA PARA MODELAGEM")
 print("="*60)
 
 # COMMAND ----------
+
 

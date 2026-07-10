@@ -21,16 +21,34 @@
 # COMMAND ----------
 
 # DBTITLE 1,Configuração
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC from pyspark.sql import functions as F, Window
-# MAGIC import pandas as pd
-# MAGIC import numpy as np
-# MAGIC from scipy import stats
-# MAGIC import warnings
-# MAGIC warnings.filterwarnings('ignore')
-# MAGIC
-# MAGIC print("✓ Configuração carregada")
+# Configs inline
+from pyspark.sql import functions as F, Window
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+import warnings
+warnings.filterwarnings('ignore')
+
+print("✓ Configuração carregada")
+print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
@@ -286,4 +304,5 @@ print("✓ ANÁLISE CAUSAL COMPLETA")
 print("="*80)
 
 # COMMAND ----------
+
 

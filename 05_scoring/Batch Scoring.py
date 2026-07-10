@@ -17,31 +17,91 @@
 # COMMAND ----------
 
 # DBTITLE 1,Configuração
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC import mlflow
-# MAGIC import mlflow.sklearn
-# MAGIC from pyspark.sql import functions as F
-# MAGIC import pandas as pd
-# MAGIC import warnings
-# MAGIC warnings.filterwarnings('ignore')
-# MAGIC
-# MAGIC print("✓ Configuração carregada")
+# Configs inline
+from pyspark.sql import functions as F
+import pandas as pd
+import mlflow
+import mlflow.sklearn
+
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
+
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+def get_latest_model_version(model_name):
+    from mlflow.tracking import MlflowClient
+    import mlflow
+    # Set tracking URI explicitly for Serverless compute
+    mlflow.set_tracking_uri("databricks")
+    client = MlflowClient()
+    try:
+        versions = client.search_model_versions(f"name='{model_name}'")
+        if versions:
+            return max([int(v.version) for v in versions])
+    except Exception as e:
+        print(f"Error getting model version: {e}")
+        pass
+    return None
+
+import warnings
+warnings.filterwarnings('ignore')
+
+print("✓ Configuração carregada")
+print(f"  Catalog: {CATALOG}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Instalar dependências
+# MAGIC %pip install --upgrade numpy xgboost scikit-learn --quiet
+# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
 # DBTITLE 1,1. Carregar Modelo de Churn do MLflow
-# Carregar modelo registrado
-model_name = f"{MODEL_REGISTRY_NAME_PREFIX}_churn"
-model_version = get_latest_model_version(model_name)
+# Carregar modelo e metadados do UC Volume
+import pickle
 
-if model_version:
-    model_uri = f"models:/{model_name}/{model_version}"
-    model = mlflow.sklearn.load_model(model_uri)
-    print(f"✓ Modelo carregado: {model_name} v{model_version}")
-else:
-    print("✗ Modelo não encontrado. Execute o notebook de treino primeiro.")
-    raise Exception("Modelo não encontrado")
+print("Carregando modelo do UC Volume...")
+
+# Carregar modelo serializado do volume
+model_path = "/Volumes/customer_intelligence/gold/models/churn_model_v1.pkl.parquet"
+metadata_path = "/Volumes/customer_intelligence/gold/models/churn_model_v1_metadata.pkl.parquet"
+
+try:
+    # Ler modelo
+    model_df = spark.read.format("parquet").load(model_path)
+    model_bytes = model_df.collect()[0]["model_binary"]
+    model = pickle.loads(model_bytes)
+    print(f"✓ Modelo carregado: {model_path}")
+    
+    # Ler metadados
+    metadata_df = spark.read.format("parquet").load(metadata_path)
+    metadata_bytes = metadata_df.collect()[0]["metadata_binary"]
+    metadata = pickle.loads(metadata_bytes)
+    
+    model_version = metadata["model_name"]
+    print(f"✓ Metadados carregados")
+    print(f"  Modelo: {metadata['model_type']}")
+    print(f"  Features: {metadata['n_features']}")
+    print(f"  AUC-ROC: {metadata['metrics']['auc_roc']:.4f}")
+    print(f"  Data treino: {metadata['train_date']}")
+    
+except Exception as e:
+    raise Exception(f"Erro ao carregar modelo do volume: {e}")
 
 # COMMAND ----------
 
@@ -148,7 +208,7 @@ print(df_scores.nlargest(10, "churn_probability")[["customer_id", "churn_probabi
 print("\n" + "="*60)
 print("BATCH SCORING - RESUMO")
 print("="*60)
-print(f"\n✅ Modelo: {model_name} v{model_version}")
+print(f"\n✅ Modelo: {model_version}")
 print(f"✅ Clientes scored: {len(df_scores):,}")
 print(f"\n✅ Distribuição de risco de churn:")
 for category in ["Low", "Medium", "High"]:
@@ -161,4 +221,5 @@ print("✓ SCORING COMPLETO")
 print("="*60)
 
 # COMMAND ----------
+
 

@@ -20,14 +20,32 @@
 # COMMAND ----------
 
 # DBTITLE 1,Configuração
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC from pyspark.sql import functions as F, Window
-# MAGIC import pandas as pd
-# MAGIC import warnings
-# MAGIC warnings.filterwarnings('ignore')
-# MAGIC
-# MAGIC print("✓ Configuração carregada")
+# Configs inline
+from pyspark.sql import functions as F, Window
+import pandas as pd
+
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+import warnings
+warnings.filterwarnings('ignore')
+
+print("✓ Configuração carregada")
+print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
@@ -43,13 +61,13 @@ feature_stats = []
 for feature in key_features:
     stats = df_features.select(
         F.lit(feature).alias("feature_name"),
-        F.mean(feature).alias("mean"),
-        F.stddev(feature).alias("stddev"),
-        F.min(feature).alias("min"),
-        F.expr(f"percentile({feature}, 0.25)").alias("p25"),
-        F.expr(f"percentile({feature}, 0.50)").alias("median"),
-        F.expr(f"percentile({feature}, 0.75)").alias("p75"),
-        F.max(feature).alias("max"),
+        F.mean(feature).cast("double").alias("mean"),
+        F.stddev(feature).cast("double").alias("stddev"),
+        F.min(feature).cast("double").alias("min"),
+        F.expr(f"percentile({feature}, 0.25)").cast("double").alias("p25"),
+        F.expr(f"percentile({feature}, 0.50)").cast("double").alias("median"),
+        F.expr(f"percentile({feature}, 0.75)").cast("double").alias("p75"),
+        F.max(feature).cast("double").alias("max"),
         F.current_timestamp().alias("snapshot_date")
     ).collect()[0]
     feature_stats.append(stats)
@@ -141,16 +159,18 @@ avg_order_value = df_transactions.agg(F.avg("total_amount")).collect()[0][0] or 
 
 total_events = df_events.count()
 
+from datetime import datetime
+
 kpis = {
-    "snapshot_date": pd.Timestamp.now(),
-    "total_customers": total_customers,
-    "active_customers": active_customers,
-    "churned_customers": churned_customers,
+    "snapshot_date": datetime.now().isoformat(),
+    "total_customers": int(total_customers),
+    "active_customers": int(active_customers),
+    "churned_customers": int(churned_customers),
     "churn_rate_pct": round(churned_customers / total_customers * 100, 2) if total_customers > 0 else 0,
-    "total_revenue": round(total_revenue, 2),
+    "total_revenue": round(float(total_revenue), 2),
     "avg_revenue_per_customer": round(total_revenue / total_customers, 2) if total_customers > 0 else 0,
-    "avg_order_value": round(avg_order_value, 2),
-    "total_events": total_events
+    "avg_order_value": round(float(avg_order_value), 2),
+    "total_events": int(total_events)
 }
 
 print("\n" + "="*80)
@@ -191,4 +211,5 @@ print("   3. Retreine modelos se drift significativo")
 print("   4. Acompanhe KPIs em dashboard executivo")
 
 # COMMAND ----------
+
 

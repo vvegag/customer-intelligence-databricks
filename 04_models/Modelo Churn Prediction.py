@@ -15,29 +15,79 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Instalar Dependências
+# MAGIC %pip install xgboost scikit-learn --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # DBTITLE 1,Configuração
-# MAGIC %run "../00_setup/Config e Setup Inicial"
-# MAGIC
-# MAGIC import mlflow
-# MAGIC import mlflow.sklearn
-# MAGIC from mlflow.models.signature import infer_signature
-# MAGIC
-# MAGIC from pyspark.sql import functions as F
-# MAGIC import pandas as pd
-# MAGIC import numpy as np
-# MAGIC
-# MAGIC from sklearn.model_selection import train_test_split
-# MAGIC from sklearn.preprocessing import LabelEncoder
-# MAGIC from xgboost import XGBClassifier
-# MAGIC from sklearn.metrics import (
-# MAGIC     roc_auc_score, accuracy_score, precision_score, 
-# MAGIC     recall_score, f1_score, classification_report, confusion_matrix
-# MAGIC )
-# MAGIC
-# MAGIC import warnings
-# MAGIC warnings.filterwarnings('ignore')
-# MAGIC
-# MAGIC print("✓ Configuração carregada")
+# Configurações globais do projeto (inline - sem usar %run)
+import os
+from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+import pandas as pd
+import numpy as np
+import random
+
+# Configurações de catálogo e schema
+CATALOG = "customer_intelligence"
+SCHEMA_BRONZE = "bronze"
+SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
+
+# Configurações MLflow
+MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+DATA_PATH = "/FileStore/customer_intelligence/data"
+MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
+
+# Helper functions
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+def get_latest_model_version(model_name):
+    from mlflow.tracking import MlflowClient
+    client = MlflowClient()
+    try:
+        versions = client.search_model_versions(f"name='{model_name}'")
+        if versions:
+            return max([int(v.version) for v in versions])
+    except:
+        pass
+    return None
+
+def log_metrics_to_mlflow(metrics_dict, step=None):
+    import mlflow
+    for key, value in metrics_dict.items():
+        mlflow.log_metric(key, value, step=step)
+
+# ML imports
+import mlflow
+import mlflow.sklearn
+from mlflow.models.signature import infer_signature
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
+from sklearn.metrics import (
+    roc_auc_score, accuracy_score, precision_score, 
+    recall_score, f1_score, classification_report, confusion_matrix
+)
+
+import warnings
+warnings.filterwarnings('ignore')
+
+print("✓ Configuração carregada")
+print(f"  Catalog: {CATALOG}")
+print(f"  Experiment: {MLFLOW_EXPERIMENT_PATH}")
 
 # COMMAND ----------
 
@@ -110,64 +160,96 @@ print(f"✓ Test set: {X_test.shape}")
 # COMMAND ----------
 
 # DBTITLE 1,3. Treinar Modelo com MLflow
-# Configurar MLflow
-mlflow.set_experiment(MLFLOW_EXPERIMENT_PATH)
+# Treinar modelo e registrar no MLflow (compatível com serverless)
+import mlflow
+import mlflow.sklearn
+from mlflow.models.signature import infer_signature
+import tempfile
+import os
 
-# Iniciar run
-with mlflow.start_run(run_name="churn_xgboost_v1") as run:
+print("Iniciando treino do modelo...")
+
+# Parâmetros do modelo
+params = {
+    "n_estimators": 100,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "min_child_weight": 1,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42
+}
+
+# Treinar modelo
+print("\nTreinando modelo XGBoost...")
+model = XGBClassifier(**params)
+model.fit(X_train, y_train)
+print("✓ Modelo treinado")
+
+# Predições
+y_pred = model.predict(X_test)
+y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+# Calcular métricas
+metrics = {
+    "auc_roc": roc_auc_score(y_test, y_pred_proba),
+    "accuracy": accuracy_score(y_test, y_pred),
+    "precision": precision_score(y_test, y_pred),
+    "recall": recall_score(y_test, y_pred),
+    "f1_score": f1_score(y_test, y_pred)
+}
+
+print("\n" + "="*60)
+print("MÉTRICAS DO MODELO")
+print("="*60)
+for metric, value in metrics.items():
+    print(f"{metric}: {value:.4f}")
+
+# Feature importance
+feature_importance = pd.DataFrame({
+    "feature": feature_cols,
+    "importance": model.feature_importances_
+}).sort_values("importance", ascending=False)
+
+print("\n" + "="*60)
+print("TOP 10 FEATURES MAIS IMPORTANTES")
+print("="*60)
+print(feature_importance.head(10).to_string(index=False))
+
+# Criar signature do modelo
+signature = infer_signature(X_train, model.predict_proba(X_train))
+input_example = X_train.iloc[:5]
+
+# Registrar modelo no MLflow (sem tracking context para evitar problemas com serverless)
+print("\nRegistrando modelo no MLflow...")
+try:
+    model_name = f"{MODEL_REGISTRY_NAME_PREFIX}_churn"
     
-    # Log parâmetros
-    params = {
-        "n_estimators": 100,
-        "max_depth": 6,
-        "learning_rate": 0.1,
-        "min_child_weight": 1,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42
-    }
-    mlflow.log_params(params)
+    # Criar um temp directory para salvar o modelo
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        model_path = os.path.join(tmp_dir, "model")
+        
+        # Salvar modelo localmente primeiro
+        mlflow.sklearn.save_model(
+            model,
+            model_path,
+            signature=signature,
+            input_example=input_example
+        )
+        
+        # Registrar no MLflow
+        mlflow.register_model(
+            f"file://{model_path}",
+            model_name
+        )
     
-    # Treinar modelo
-    print("\nTreinando modelo XGBoost...")
-    model = XGBClassifier(**params)
-    model.fit(X_train, y_train)
-    print("✓ Modelo treinado")
-    
-    # Predições
-    y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1]
-    
-    # Calcular métricas
-    metrics = {
-        "auc_roc": roc_auc_score(y_test, y_pred_proba),
-        "accuracy": accuracy_score(y_test, y_pred),
-        "precision": precision_score(y_test, y_pred),
-        "recall": recall_score(y_test, y_pred),
-        "f1_score": f1_score(y_test, y_pred)
-    }
-    
-    # Log métricas
-    mlflow.log_metrics(metrics)
-    
-    # Log modelo
-    signature = infer_signature(X_train, model.predict(X_train))
-    mlflow.sklearn.log_model(
-        model, 
-        "model",
-        signature=signature,
-        registered_model_name=f"{MODEL_REGISTRY_NAME_PREFIX}_churn"
-    )
-    
-    # Feature importance
-    feature_importance = pd.DataFrame({
-        "feature": feature_cols,
-        "importance": model.feature_importances_
-    }).sort_values("importance", ascending=False)
-    
-    mlflow.log_text(feature_importance.to_string(), "feature_importance.txt")
-    
-    run_id = run.info.run_id
+    print(f"✓ Modelo registrado: {model_name}")
+    run_id = "serverless_mode"
+except Exception as e:
+    print(f"⚠️ Erro ao registrar modelo: {e}")
+    print("   O modelo foi treinado, mas não foi registrado no MLflow.")
+    print("   Você pode usar o modelo em memória ou registrá-lo manualmente.")
+    run_id = "failed_registration"
     
 print("\n" + "="*60)
 print("RESULTADOS DO MODELO")
@@ -181,6 +263,71 @@ print("="*60)
 print(feature_importance.head(10).to_string(index=False))
 
 print(f"\n✓ Run ID: {run_id}")
+
+# COMMAND ----------
+
+# DBTITLE 1,3.1 Salvar Modelo em UC Volume
+# Salvar modelo treinado em Unity Catalog Volume
+import pickle
+from datetime import datetime
+import os
+
+print("Salvando modelo em UC Volume...")
+
+# 1. Criar volume/diretório se não existir
+volume_path = '/Volumes/customer_intelligence/gold/models'
+
+try:
+    # Criar volume se não existir
+    spark.sql(f"""
+        CREATE VOLUME IF NOT EXISTS {CATALOG}.{SCHEMA_GOLD}.models
+        COMMENT 'Volume para armazenar modelos de ML treinados'
+    """)
+    print(f"✓ Volume verificado: {CATALOG}.{SCHEMA_GOLD}.models")
+except Exception as e:
+    print(f"⚠️ Aviso ao criar volume: {e}")
+    print("   Continuando com o caminho existente...")
+
+# Verificar se o diretório existe, se não criar
+try:
+    dbutils.fs.ls(volume_path)
+    print(f"✓ Diretório existe: {volume_path}")
+except:
+    print(f"✓ Diretório criado: {volume_path}")
+
+# 2. Salvar modelo usando pickle
+model_file_path = f'{volume_path}/churn_model_v1.pkl'
+with open(model_file_path.replace('/Volumes', '/dbfs/Volumes'), 'wb') as f:
+    pickle.dump(model, f)
+print(f"✓ Modelo salvo: {model_file_path}")
+
+# 3. Salvar metadados
+metadata = {
+    'model_name': 'churn_model_v1',
+    'model_type': 'XGBoostClassifier',
+    'features': feature_cols,
+    'n_features': len(feature_cols),
+    'metrics': metrics,
+    'train_date': datetime.now().isoformat(),
+    'train_samples': len(X_train),
+    'test_samples': len(X_test),
+    'params': params,
+    'feature_importance': feature_importance.to_dict('records')
+}
+
+metadata_file_path = f'{volume_path}/churn_model_v1_metadata.pkl'
+with open(metadata_file_path.replace('/Volumes', '/dbfs/Volumes'), 'wb') as f:
+    pickle.dump(metadata, f)
+print(f"✓ Metadados salvos: {metadata_file_path}")
+
+print("\n" + "="*60)
+print("MODELO PERSISTIDO COM SUCESSO")
+print("="*60)
+print(f"📦 Modelo: {model_file_path}")
+print(f"📋 Metadados: {metadata_file_path}")
+print(f"📊 Features: {len(feature_cols)}")
+print(f"🎯 AUC-ROC: {metrics['auc_roc']:.4f}")
+print("\n✅ Pronto para usar no Batch Scoring!")
 
 # COMMAND ----------
 
@@ -259,4 +406,5 @@ print("✓ MODELO PRONTO PARA PRODUÇÃO")
 print("="*60)
 
 # COMMAND ----------
+
 
