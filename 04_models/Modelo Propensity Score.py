@@ -71,6 +71,12 @@ print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
+# DBTITLE 1,Instalar XGBoost
+# MAGIC %pip install xgboost --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # DBTITLE 1,Criar Target - Compra nos Últimos 30 dias
 # Criar target: comprou nos últimos 30 dias?
 df_transactions = spark.table(get_full_table_name(SCHEMA_SILVER, "transactions"))
@@ -123,7 +129,19 @@ with mlflow.start_run(run_name="propensity_xgboost_v1") as run:
     
     mlflow.log_params({"n_estimators": 100, "max_depth": 6})
     mlflow.log_metrics(metrics)
-    mlflow.sklearn.log_model(model, "model", registered_model_name=f"{MODEL_REGISTRY_NAME_PREFIX}_propensity")
+    
+    # Criar signature e input_example para Unity Catalog
+    from mlflow.models.signature import infer_signature
+    signature = infer_signature(X_train, y_pred_proba)
+    input_example = X_train.head(5)
+    
+    mlflow.sklearn.log_model(
+        model, 
+        "model", 
+        registered_model_name=f"{MODEL_REGISTRY_NAME_PREFIX}_propensity",
+        signature=signature,
+        input_example=input_example
+    )
     
 print("\n✓ Modelo treinado")
 for k, v in metrics.items():
