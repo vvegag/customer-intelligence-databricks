@@ -1,0 +1,39 @@
+# Databricks
+.DS_Store
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
+*.log
+
+# Python
+*.egg-info/
+dist/
+build/
+venv/
+env/
+.venv/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Data files (não commitar dados grandes)
+*.parquet
+*.csv
+*.json
+*.pkl
+*.joblib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Databricks specific
+.databricks/
+*.dbc

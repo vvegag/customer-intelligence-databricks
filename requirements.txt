@@ -1,0 +1,32 @@
+# Requirements para Customer Intelligence Project
+# Databricks Runtime já inclui a maioria, mas listando para referência
+
+# Core ML/Data Science
+pandas>=1.5.0
+numpy>=1.23.0
+scikit-learn>=1.2.0
+xgboost>=1.7.0
+lightgbm>=3.3.0
+
+# Databricks & Spark
+databricks-sdk>=0.12.0
+pyspark>=3.4.0
+
+# MLflow
+mlflow>=2.8.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2023.0
+
+# Visualization (opcional - Databricks tem built-in)
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.17.0
+
+# Statistical analysis
+scipy>=1.10.0
+statsmodels>=0.14.0
+
+# Causal inference (para A/B testing)
+dowhy>=0.9.0  # opcional, se usar causal inference avançado
