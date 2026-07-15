@@ -17,6 +17,12 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Instalar XGBoost
+# MAGIC %pip install xgboost --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # DBTITLE 1,Setup
 # Configurações globais do projeto (inline)
 import os
@@ -71,12 +77,6 @@ print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Instalar XGBoost
-# MAGIC %pip install xgboost --quiet
-# MAGIC dbutils.library.restartPython()
-
-# COMMAND ----------
-
 # DBTITLE 1,Criar Target - Compra nos Últimos 30 dias
 # Criar target: comprou nos últimos 30 dias?
 df_transactions = spark.table(get_full_table_name(SCHEMA_SILVER, "transactions"))
@@ -84,6 +84,7 @@ max_date = df_transactions.agg(F.max("transaction_date")).collect()[0][0]
 cutoff_date = max_date - pd.Timedelta(days=30)
 
 df_recent_buyers = df_transactions.filter(F.col("transaction_date") >= cutoff_date).select("customer_id").distinct()
+# Adiciona uma coluna 'purchased_last_30d' com valor 1 para clientes que compraram nos últimos 30 dias
 df_recent_buyers = df_recent_buyers.withColumn("purchased_last_30d", F.lit(1))
 
 df_features = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_features"))
@@ -111,10 +112,29 @@ print(f"✓ Train: {X_train.shape}, Test: {X_test.shape}")
 # COMMAND ----------
 
 # DBTITLE 1,Treinar Modelo
+# =============================================================================
+# TIPO DE MODELO: CLASSIFICAÇÃO BINÁRIA
+# =============================================================================
+# Target: purchased_last_30d (0 ou 1)
+# Output: Probabilidade de compra (0.0 a 1.0) - "propensity score"
+# 
+# NÃO é regressão! Embora o output seja contínuo (probabilidade), o problema
+# é de classificação porque prevemos uma classe binária (comprou: sim/não).
+# 
+# XGBClassifier.predict_proba() retorna P(y=1|X), que interpretamos como
+# "propensão de compra" - quanto maior, mais provável o cliente comprar.
+# =============================================================================
+
 mlflow.set_experiment(MLFLOW_EXPERIMENT_PATH)
 
 with mlflow.start_run(run_name="propensity_xgboost_v1") as run:
-    model = XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42)
+    # XGBClassifier = Classificação Binária (não XGBRegressor)
+    model = XGBClassifier(
+        n_estimators=100,      # Número de árvores (boosting rounds)
+        max_depth=6,           # Profundidade máxima de cada árvore
+        learning_rate=0.1,     # Taxa de aprendizado (step size)
+        random_state=42        # Semente para reprodução dos resultados
+    )
     model.fit(X_train, y_train)
     
     y_pred_proba = model.predict_proba(X_test)[:, 1]
@@ -151,8 +171,10 @@ for k, v in metrics.items():
 
 # DBTITLE 1,Salvar Scores
 # Score todos os clientes
+# predict_proba()[:, 1] = Probabilidade da classe positiva (comprou = 1)
+# Isso é o "propensity score" - quanto maior, mais propensão de compra
 X_all = df_pandas[feature_cols]
-propensity_scores = model.predict_proba(X_all)[:, 1]
+propensity_scores = model.predict_proba(X_all)[:, 1]  # Valores entre 0.0 e 1.0
 
 df_pandas["propensity_score"] = propensity_scores
 df_pandas["propensity_category"] = pd.cut(propensity_scores, bins=[0, 0.3, 0.7, 1.0], labels=["Low", "Medium", "High"])
@@ -164,7 +186,3 @@ create_or_replace_table(df_scores_spark, SCHEMA_GOLD, "propensity_scores")
 print(f"\n✓ Scores salvos: {get_full_table_name(SCHEMA_GOLD, 'propensity_scores')}")
 print(f"\nDistribuição:")
 print(df_scores["propensity_category"].value_counts())
-
-# COMMAND ----------
-
-

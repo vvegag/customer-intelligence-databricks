@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # DBTITLE 1,Introdução - AutoML Databricks
 # MAGIC %md
 # MAGIC # AutoML Databricks - Churn Prediction
@@ -54,13 +58,17 @@ print(f"  Catalog: {CATALOG}")
 df_features = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.customer_features")
 df_labels = spark.table(f"{CATALOG}.{SCHEMA_GOLD}.churn_labels")
 
+# Renomear colunas duplicadas em df_labels para evitar ambiguidade
+df_labels = df_labels.withColumnRenamed("recency_days", "recency_days_label") \
+                     .withColumnRenamed("frequency", "frequency_label")
+
 # Join features com labels
 df_automl = df_features.join(df_labels, "customer_id", "inner")
 
 # Selecionar features relevantes (mesmo dataset do modelo manual)
 feature_cols = [
-    "recency_days",
-    "frequency", 
+    "recency_days",  # recency_days da tabela de features
+    "frequency",     # frequency da tabela de features
     "monetary_total",
     "monetary_avg",
     "customer_lifetime_days",
@@ -75,9 +83,10 @@ feature_cols = [
     "conversion_rate"
 ]
 
+# Usar 'churn_label' como target (substituindo 'will_churn')
 df_automl_final = df_automl.select(
-    ["customer_id"] + feature_cols + ["will_churn"]
-)
+    ["customer_id"] + [f"customer_features.{col}" for col in feature_cols] + ["churn_label"]
+).withColumnRenamed("churn_label", "will_churn")
 
 print(f"✓ Dataset preparado para AutoML")
 print(f"  Linhas: {df_automl_final.count():,}")
@@ -85,7 +94,7 @@ print(f"  Features: {len(feature_cols)}")
 print(f"  Target: will_churn")
 
 # Visualizar sample
-df_automl_final.limit(5).display()
+display(df_automl_final.limit(5))
 
 # COMMAND ----------
 
@@ -102,6 +111,21 @@ for _, row in target_distribution.iterrows():
 # COMMAND ----------
 
 # DBTITLE 1,Executar AutoML
+# Executar AutoML via UI: 
+# No Databricks, use o menu "Machine Learning" > "AutoML" para iniciar experimentos.
+# Alternativamente, use o notebook gerado automaticamente pelo AutoML.
+
+print("❌ AutoML não disponível via API nesta versão do Databricks Runtime.")
+print("➡️ Execute AutoML pelo menu: Machine Learning > AutoML > Create Experiment")
+print("➡️ Ou utilize o notebook gerado automaticamente pelo AutoML para análise dos resultados.")
+
+
+
+
+
+### Forma alternativa não rodar este notebook 
+
+
 import databricks.automl
 
 # Executar AutoML para classificação

@@ -167,6 +167,7 @@ df_responses = spark.table(get_full_table_name(SCHEMA_SILVER, "campaign_response
 # Features de exposição
 df_campaign_features = df_exposures.groupBy("customer_id").agg(
     F.count("exposure_id").alias("total_campaigns_exposed"),
+    # Contar campanhas em que o cliente foi do grupo de tratamento (não controle)
     F.sum(F.when(F.col("is_control_group") == False, 1).otherwise(0)).alias("treatment_campaigns_count"),
     F.sum(F.when(F.col("is_control_group") == True, 1).otherwise(0)).alias("control_campaigns_count"),
     F.countDistinct("campaign_id").alias("unique_campaigns_exposed")
@@ -210,10 +211,10 @@ df_campaign_history.show(5)
 
 # DBTITLE 1,4. Customer Master Features (Feature Store Completo)
 # Juntar todas as features em uma tabela master
-df_customers = spark.table(get_full_table_name(SCHEMA_SILVER, "customers"))
-df_rfm = spark.table(get_full_table_name(SCHEMA_GOLD, "rfm_features"))
-df_behavioral = spark.table(get_full_table_name(SCHEMA_GOLD, "behavioral_features"))
-df_campaign = spark.table(get_full_table_name(SCHEMA_GOLD, "campaign_history_features"))
+df_customers =   spark.table(get_full_table_name(SCHEMA_SILVER, "customers"))
+df_rfm =         spark.table(get_full_table_name(SCHEMA_GOLD, "rfm_features"))
+df_behavioral =  spark.table(get_full_table_name(SCHEMA_GOLD, "behavioral_features"))
+df_campaign =    spark.table(get_full_table_name(SCHEMA_GOLD, "campaign_history_features"))
 
 # Começar com clientes
 df_features = df_customers.select(
@@ -241,6 +242,7 @@ df_features = df_features.join(df_campaign, "customer_id", "left")
 # Preencher nulos
 for col in df_features.columns:
     if col not in ["customer_id", "signup_date", "age_group", "gender", "country", "segment", "first_purchase_date", "last_purchase_date"]:
+        # Preencher nulos com 0
         df_features = df_features.fillna({col: 0})
 
 # Adicionar timestamp de criação
@@ -320,6 +322,8 @@ for table in gold_tables:
     print(f"  - Colunas: {cols}")
     print(f"  - Tabela: {full_name}")
 
+# Explicação: rfm_features pode ter mais registros que behavioral_features porque nem todo cliente realizou eventos comportamentais,
+# mas pode ter feito transações (compras). Clientes sem eventos comportamentais ainda aparecem em rfm_features se compraram algo.
 print("\n" + "="*60)
 print("✓ GOLD LAYER COMPLETA - PRONTA PARA MODELAGEM")
 print("="*60)

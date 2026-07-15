@@ -223,6 +223,8 @@ df_campaigns.show(5)
 # Simular exposições a campanhas (quem viu cada campanha)
 N_EXPOSURES = 30000
 
+# Extrai todos os IDs de campanhas da tabela campaigns_raw para uma lista
+# 'row.campaign_id' refere-se ao valor da coluna 'campaign_id' em cada linha (row) retornada pelo método .collect() do DataFrame 'df_campaigns'
 campaign_ids = [row.campaign_id for row in df_campaigns.select("campaign_id").collect()]
 
 exposure_data = []

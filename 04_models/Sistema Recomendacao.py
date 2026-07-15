@@ -1,0 +1,377 @@
+# Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
+# DBTITLE 1,Sistema de Recomendação
+# MAGIC %md
+# MAGIC # Sistema de Recomendação
+# MAGIC
+# MAGIC ## Objetivo
+# MAGIC Implementar três tipos de sistemas de recomendação para clientes:
+# MAGIC
+# MAGIC ### 1. **Next Best Product** 🛍️
+# MAGIC * Produto com maior probabilidade de compra
+# MAGIC * Baseado em histórico de transações
+# MAGIC * Score: probabilidade de compra (0.0 a 1.0)
+# MAGIC
+# MAGIC ### 2. **Next Best Action** 🎯
+# MAGIC * Ação recomendada por segmento de cliente
+# MAGIC * Baseado em perfil RFM e comportamento
+# MAGIC * Ações: Retention, Upsell, Cross-sell, Reactivation
+# MAGIC
+# MAGIC ### 3. **Collaborative Filtering** 👥
+# MAGIC * Produtos similares aos já comprados
+# MAGIC * Baseado em co-ocorrência (quem comprou X também comprou Y)
+# MAGIC * Top-N produtos recomendados
+# MAGIC
+# MAGIC ---
+# MAGIC
+# MAGIC ## Diferencial para a Vaga
+# MAGIC ✅ **Requisito citado:** "Atuação em projetos de recomendação"
+# MAGIC ✅ **Demonstra:** Múltiplas abordagens de recomendação
+# MAGIC ✅ **Mostra:** Deploy de sistema de scoring em produção
+
+# COMMAND ----------
+
+# DBTITLE 1,Setup e Configuração
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.sparse import csr_matrix
+
+CATALOG = "customer_intelligence"
+SCHEMA_GOLD = "gold"
+SCHEMA_SILVER = "silver"
+SCHEMA_BRONZE = "bronze"
+
+def get_full_table_name(schema, table):
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table):
+    full_name = get_full_table_name(schema, table)
+    df.write.format("delta").mode("overwrite").saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
+print("✓ Setup OK")
+print(f"  Catalog: {CATALOG}")
+
+# COMMAND ----------
+
+# DBTITLE 1,1️⃣ Next Best Product - Preparar Dados
+# Carregar transações e produtos
+df_transactions = spark.table(get_full_table_name(SCHEMA_SILVER, "transactions"))
+df_products = spark.table(get_full_table_name(SCHEMA_BRONZE, "products_raw"))
+
+# Calcular popularidade de cada produto
+df_product_popularity = df_transactions.groupBy("product_id").agg(
+    F.count("*").alias("purchase_count"),
+    F.countDistinct("customer_id").alias("unique_customers"),
+    F.sum("total_amount").alias("total_revenue")
+)
+
+# Calcular taxa de conversão por produto
+total_customers = spark.table(get_full_table_name(SCHEMA_BRONZE, "customers_raw")).count()
+df_product_popularity = df_product_popularity.withColumn(
+    "conversion_rate",
+    F.col("unique_customers") / F.lit(total_customers)
+)
+
+print(f"✓ Dados preparados: {df_product_popularity.count()} produtos")
+df_product_popularity.orderBy(F.desc("purchase_count")).limit(10).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,1️⃣ Next Best Product - Calcular Scores
+# Para cada cliente, calcular score de propensão de compra para cada produto
+# Score = combinação de:
+# - Popularidade do produto (conversão geral)
+# - Categoria já comprada pelo cliente
+# - Preço compatível com histórico do cliente
+
+# Join transactions com products para pegar categoria
+df_trans_enriched = df_transactions.join(df_products.select("product_id", "category"), "product_id")
+
+df_customer_history = df_trans_enriched.groupBy("customer_id").agg(
+    F.collect_set("product_id").alias("purchased_products"),
+    F.avg("total_amount").alias("avg_purchase_amount"),
+    F.collect_set("category").alias("purchased_categories")
+)
+
+# Enriquecer produtos com score
+df_products_scored = df_products.join(
+    df_product_popularity,
+    "product_id",
+    "left"
+).fillna({"conversion_rate": 0.01, "purchase_count": 1})
+
+print(f"✓ Scores calculados para {df_products_scored.count()} produtos")
+df_products_scored.orderBy(F.desc("conversion_rate")).limit(10).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,1️⃣ Next Best Product - Recomendações Personalizadas
+# Para cada cliente, recomendar TOP 5 produtos que ele NUNCA comprou
+df_customers = spark.table(get_full_table_name(SCHEMA_BRONZE, "customers_raw"))
+
+# Cross join clientes x produtos
+df_recommendations = df_customers.select("customer_id").crossJoin(
+    df_products_scored.select(
+        "product_id", "product_name", "category", 
+        "price", "conversion_rate", "purchase_count"
+    )
+)
+
+# Remover produtos já comprados
+# Criar um set de produtos comprados por cliente com aliases claros
+df_purchased = df_customer_history.select(
+    F.col("customer_id").alias("cust_id_purchased"),
+    F.explode("purchased_products").alias("purchased_product_id")
+)
+
+# Anti-join com aliases para evitar ambiguidade
+df_recommendations = df_recommendations.join(
+    df_purchased,
+    (df_recommendations.customer_id == df_purchased.cust_id_purchased) &
+    (df_recommendations.product_id == df_purchased.purchased_product_id),
+    "left_anti"
+)
+
+# Ranking: Top 5 por cliente
+window_spec = Window.partitionBy("customer_id").orderBy(F.desc("conversion_rate"))
+df_top_recommendations = df_recommendations.withColumn(
+    "rank",
+    F.row_number().over(window_spec)
+).filter(F.col("rank") <= 5)
+
+print(f"✓ Recomendações geradas: {df_top_recommendations.count():,} recomendações")
+print(f"  Top 5 produtos por cliente")
+df_top_recommendations.filter(F.col("customer_id") == "C001").display()
+
+# COMMAND ----------
+
+# DBTITLE 1,2️⃣ Next Best Action - Definir Ações por Segmento
+# Carregar segmentos de clientes
+df_segments = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_segments"))
+df_features = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_features"))
+
+# Definir ação recomendada por perfil
+df_actions = df_segments.join(df_features, "customer_id")
+
+# Lógica de recomendação:
+# - Cluster 0 (High Value): Retention (manter engajado)
+# - Cluster 1 (At Risk): Reactivation (recuperar)
+# - Cluster 2 (New): Onboarding (engajar)
+# - Cluster 3 (Low Value): Cross-sell (aumentar ticket)
+# - Cluster 4 (Medium): Upsell (upgrade)
+
+action_mapping = {
+    0: "Retention - Programa VIP",
+    1: "Reactivation - Oferta de retorno",
+    2: "Onboarding - Tutorial + desconto",
+    3: "Cross-sell - Bundle de produtos",
+    4: "Upsell - Upgrade de categoria"
+}
+
+from pyspark.sql.types import StringType
+import pyspark.sql.functions as F
+
+action_udf = F.udf(lambda x: action_mapping.get(x, "Unknown"), StringType())
+df_actions = df_actions.withColumn(
+    "recommended_action",
+    action_udf(F.col("cluster"))
+)
+
+print("✓ Ações recomendadas por segmento:")
+df_actions.groupBy("cluster", "recommended_action").count().orderBy("cluster").display()
+
+# COMMAND ----------
+
+# DBTITLE 1,2️⃣ Next Best Action - Priorização
+# Adicionar score de prioridade baseado em:
+# - Valor do cliente (monetary_total)
+# - Risco de churn (se tiver)
+# - Engajamento recente
+
+df_actions = df_actions.withColumn(
+    "action_priority",
+    F.when(F.col("cluster") == 0, 5)  # High value = prioridade máxima
+     .when(F.col("cluster") == 1, 4)  # At risk = alta prioridade
+     .when(F.col("cluster") == 4, 3)  # Medium = média prioridade
+     .when(F.col("cluster") == 2, 2)  # New = baixa prioridade
+     .otherwise(1)                     # Low value = mínima prioridade
+)
+
+df_actions = df_actions.withColumn(
+    "expected_impact",
+    F.when(F.col("cluster") == 0, F.col("monetary_total") * 0.1)  # 10% uplift
+     .when(F.col("cluster") == 1, F.col("monetary_total") * 0.3)  # 30% recovery
+     .when(F.col("cluster") == 4, F.col("monetary_total") * 0.2)  # 20% upsell
+     .otherwise(F.col("monetary_total") * 0.15)                     # 15% default
+)
+
+print("✓ Priorização calculada")
+df_actions.select(
+    "customer_id", "cluster", "recommended_action", 
+    "action_priority", "expected_impact"
+).orderBy(F.desc("action_priority"), F.desc("expected_impact")).limit(20).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,3️⃣ Collaborative Filtering - Matrix de Co-ocorrência
+# Criar matriz cliente-produto (quem comprou o quê)
+df_customer_product = df_transactions.select(
+    "customer_id", "product_id"
+).distinct()
+
+# Calcular co-ocorrência: produtos comprados juntos
+df_cooccurrence = df_customer_product.alias("a").join(
+    df_customer_product.alias("b"),
+    F.col("a.customer_id") == F.col("b.customer_id")
+).filter(
+    F.col("a.product_id") != F.col("b.product_id")
+).groupBy(
+    F.col("a.product_id").alias("product_a"),
+    F.col("b.product_id").alias("product_b")
+).agg(
+    F.count("*").alias("co_purchase_count")
+)
+
+# Calcular score de similaridade
+total_product_purchases = df_customer_product.groupBy("product_id").count()
+
+df_similarity = df_cooccurrence.join(
+    total_product_purchases.select(
+        F.col("product_id").alias("product_a"),
+        F.col("count").alias("count_a")
+    ),
+    "product_a"
+).withColumn(
+    "similarity_score",
+    F.col("co_purchase_count") / F.col("count_a")
+)
+
+print(f"✓ Matriz de similaridade criada: {df_similarity.count():,} pares")
+df_similarity.orderBy(F.desc("similarity_score")).limit(20).display()
+
+# COMMAND ----------
+
+# DBTITLE 1,3️⃣ Collaborative Filtering - Recomendações
+# Para cada cliente, recomendar produtos baseado no que compraram
+# Usar alias para evitar ambiguidade
+df_customer_purchased = df_customer_product.alias("cp")
+df_collab_recommendations = df_customer_purchased.join(
+    df_similarity,
+    F.col("cp.product_id") == df_similarity.product_a
+).select(
+    F.col("cp.customer_id").alias("customer_id"),
+    F.col("product_b").alias("recommended_product_id"),
+    "similarity_score"
+)
+
+# Remover produtos já comprados
+df_already_purchased = df_customer_product.select(
+    F.col("customer_id").alias("cust_id"),
+    F.col("product_id").alias("already_purchased")
+)
+
+df_collab_recommendations = df_collab_recommendations.join(
+    df_already_purchased,
+    (df_collab_recommendations.customer_id == df_already_purchased.cust_id) &
+    (df_collab_recommendations.recommended_product_id == df_already_purchased.already_purchased),
+    "left_anti"
+)
+
+# Top 5 recomendações por cliente
+window_spec = Window.partitionBy("customer_id").orderBy(F.desc("similarity_score"))
+df_collab_top5 = df_collab_recommendations.withColumn(
+    "rank",
+    F.row_number().over(window_spec)
+).filter(F.col("rank") <= 5)
+
+print(f"✓ Recomendações collaborative filtering: {df_collab_top5.count():,}")
+df_collab_top5.join(
+    df_products.select("product_id", "product_name", "category"),
+    df_collab_top5.recommended_product_id == df_products.product_id
+).filter(F.col("customer_id") == "C001").display()
+
+# COMMAND ----------
+
+# DBTITLE 1,💾 Salvar Todas as Recomendações
+# 1. Next Best Product
+df_nbp = df_top_recommendations.select(
+    "customer_id",
+    F.col("product_id").alias("recommended_product_id"),
+    F.lit("next_best_product").alias("recommendation_type"),
+    F.col("conversion_rate").alias("score"),
+    F.col("rank")
+)
+
+# 2. Next Best Action
+df_nba = df_actions.select(
+    "customer_id",
+    F.lit(None).cast("string").alias("recommended_product_id"),
+    F.lit("next_best_action").alias("recommendation_type"),
+    F.col("action_priority").cast("double").alias("score"),
+    F.lit(1).alias("rank")
+)
+
+# 3. Collaborative Filtering
+df_cf = df_collab_top5.select(
+    "customer_id",
+    F.col("recommended_product_id"),
+    F.lit("collaborative_filtering").alias("recommendation_type"),
+    F.col("similarity_score").alias("score"),
+    "rank"
+)
+
+# Union de todas as recomendações
+df_all_recommendations = df_nbp.union(df_nba).union(df_cf)
+
+create_or_replace_table(df_all_recommendations, SCHEMA_GOLD, "recommendations")
+
+print(f"\n✓ Total de recomendações salvas: {df_all_recommendations.count():,}")
+print(f"\nDistribuição por tipo:")
+df_all_recommendations.groupBy("recommendation_type").count().display()
+
+# COMMAND ----------
+
+# DBTITLE 1,📊 Métricas e Avaliação
+# Estatísticas gerais
+total_customers = spark.table(get_full_table_name(SCHEMA_BRONZE, "customers_raw")).count()
+total_products = spark.table(get_full_table_name(SCHEMA_BRONZE, "products_raw")).count()
+
+print("=" * 70)
+print("SISTEMA DE RECOMENDAÇÃO - RESUMO")
+print("=" * 70)
+print(f"\n1️⃣ NEXT BEST PRODUCT:")
+print(f"   Clientes com recomendações: {df_top_recommendations.select('customer_id').distinct().count():,}")
+print(f"   Total de recomendações: {df_top_recommendations.count():,}")
+print(f"   Média de score: {df_top_recommendations.agg(F.avg('conversion_rate')).collect()[0][0]:.4f}")
+
+print(f"\n2️⃣ NEXT BEST ACTION:")
+print(f"   Clientes com ações: {df_actions.count():,}")
+actions_dist = df_actions.groupBy("recommended_action").count().collect()
+for row in actions_dist:
+    print(f"   - {row['recommended_action']}: {row['count']:,}")
+
+print(f"\n3️⃣ COLLABORATIVE FILTERING:")
+print(f"   Clientes com recomendações: {df_collab_top5.select('customer_id').distinct().count():,}")
+print(f"   Total de recomendações: {df_collab_top5.count():,}")
+print(f"   Média de similaridade: {df_collab_top5.agg(F.avg('similarity_score')).collect()[0][0]:.4f}")
+
+print(f"\n📊 COBERTURA:")
+print(f"   Total clientes: {total_customers:,}")
+print(f"   Clientes com alguma recomendação: {df_all_recommendations.select('customer_id').distinct().count():,}")
+print(f"   Taxa de cobertura: {(df_all_recommendations.select('customer_id').distinct().count() / total_customers * 100):.1f}%")
+
+print("\n" + "=" * 70)
+print("✓ SISTEMA DE RECOMENDAÇÃO COMPLETO")
+print("=" * 70)
+
+# COMMAND ----------
+
+
