@@ -1,6 +1,6 @@
 # 📚 Guia dos Notebooks Production-Ready
 
-Este documento consolida o guia rápido e a estrutura detalhada dos 5 notebooks production.
+Este documento consolida o guia rápido e a estrutura detalhada dos 5 notebooks production .
 
 ---
 
