@@ -283,6 +283,29 @@ Projeto desenvolvido para demonstração de expertise em:
 
 Este é um projeto de demonstração acadêmica/técnica.
 
+
+
+---
+
+## 📚 Documentação
+
+Toda a documentação do projeto está organizada na pasta `/docs/`:
+
+| Documento | Descrição |
+|-----------|-----------|
+| [01_PROJETO_OVERVIEW.md](docs/01_PROJETO_OVERVIEW.md) | Overview do projeto, checklist e roadmap |
+| [02_PLANO_SEMANA.md](docs/02_PLANO_SEMANA.md) | Plano da semana e gaps para entrevistas |
+| [03_NOTEBOOKS_GUIDE.md](docs/03_NOTEBOOKS_GUIDE.md) | Guia dos 5 notebooks production-ready |
+| [04_APRESENTACAO.md](docs/04_APRESENTACAO.md) | Apresentação executiva e scripts de entrevista |
+| [05_MIGRATION.md](docs/05_MIGRATION.md) | Guia de migração e correções |
+
+### 🎯 Acesso Rápido:
+
+- **Para entrevistas:** [04_APRESENTACAO.md](docs/04_APRESENTACAO.md)
+- **Para executar notebooks:** [03_NOTEBOOKS_GUIDE.md](docs/03_NOTEBOOKS_GUIDE.md)
+- **Para entender o projeto:** [01_PROJETO_OVERVIEW.md](docs/01_PROJETO_OVERVIEW.md)
+
+---
 ---
 
 **✅ Projeto Completo e Pronto para Apresentação Técnica em Entrevistas**
