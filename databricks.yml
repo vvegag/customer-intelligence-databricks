@@ -1,0 +1,83 @@
+# Databricks Asset Bundle (DAB) Configuration
+bundle:
+  name: customer_intelligence
+  
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: customer_intelligence
+  
+  schema:
+    description: Schema name
+    default: gold
+
+targets:
+  # DEVELOPMENT environment
+  dev:
+    mode: development
+    workspace:
+      host: https://dbc-58d2306a-6a4b.cloud.databricks.com
+    
+    variables:
+      catalog: customer_intelligence_dev
+      num_workers: 1
+  
+  # PRODUCTION environment
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-58d2306a-6a4b.cloud.databricks.com
+    
+    variables:
+      catalog: customer_intelligence
+      num_workers: 4
+
+resources:
+  # JOB: Feature Store Update
+  jobs:
+    feature_store_update:
+      name: "[${bundle.target}] Feature Store Update"
+      
+      tasks:
+        - task_key: update_features
+          notebook_task:
+            # AJUSTAR PATH CONFORME LOCALIZAÇÃO DOS NOTEBOOKS
+            notebook_path: ./03_gold/Feature_Store_Complete
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+  
+  # JOB: ML Training Pipeline
+  ml_training_pipeline:
+    name: "[${bundle.target}] ML Training Pipeline"
+    
+    schedule:
+      quartz_cron_expression: "0 0 2 * * ?"  # Daily at 2 AM
+      timezone_id: "America/Sao_Paulo"
+    
+    tasks:
+      - task_key: train_sparkml
+        notebook_task:
+          notebook_path: ./04_models/SparkML_Pipelines_Distributed
+        
+        new_cluster:
+          spark_version: "14.3.x-ml-scala2.12"
+          node_type_id: "i3.xlarge"
+          num_workers: ${var.num_workers}
+      
+      - task_key: mlflow_experiments
+        depends_on:
+          - task_key: train_sparkml
+        
+        notebook_task:
+          notebook_path: ./04_models/MLflow_Advanced
+        
+        new_cluster:
+          spark_version: "14.3.x-ml-scala2.12"
+          node_type_id: "i3.xlarge"
+          num_workers: 1
