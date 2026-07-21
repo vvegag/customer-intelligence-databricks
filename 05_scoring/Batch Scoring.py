@@ -51,21 +51,6 @@ def create_or_replace_table(df, schema, table, partition_by=None):
     print(f"✓ Tabela criada: {full_name}")
     return full_name
 
-def get_latest_model_version(model_name):
-    from mlflow.tracking import MlflowClient
-    import mlflow
-    # Set tracking URI explicitly for Serverless compute
-    mlflow.set_tracking_uri("databricks")
-    client = MlflowClient()
-    try:
-        versions = client.search_model_versions(f"name='{model_name}'")
-        if versions:
-            return max([int(v.version) for v in versions])
-    except Exception as e:
-        print(f"Error getting model version: {e}")
-        pass
-    return None
-
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -74,37 +59,28 @@ print(f"  Catalog: {CATALOG}")
 
 # COMMAND ----------
 
-# DBTITLE 1,1. Carregar Modelo de Churn do MLflow
-# Carregar modelo e metadados do UC Volume
-import pickle
+# DBTITLE 1,1. Carregar Modelo de Churn do Model Registry
+# Carrega o modelo Champion direto do Unity Catalog Model Registry (não mais um
+# pickle num Volume — esse caminho nunca funcionou de forma confiável, ver
+# docs/05_MIGRATION.md para o histórico). O nome/alias tem que bater exatamente
+# com o que "Modelo Churn Prediction.py" registra.
+from mlflow.tracking import MlflowClient
 
-print("Carregando modelo do UC Volume...")
+mlflow.set_registry_uri("databricks-uc")
 
-# Carregar modelo serializado do volume
-model_path = "/Volumes/customer_intelligence/gold/models/churn_model_v1.pkl.parquet"
-metadata_path = "/Volumes/customer_intelligence/gold/models/churn_model_v1_metadata.pkl.parquet"
+model_name = f"{CATALOG}.{SCHEMA_GOLD}.churn_model"
+model_uri = f"models:/{model_name}@champion"
 
-try:
-    # Ler modelo
-    model_df = spark.read.format("parquet").load(model_path)
-    model_bytes = model_df.collect()[0]["model_binary"]
-    model = pickle.loads(model_bytes)
-    print(f"✓ Modelo carregado: {model_path}")
-    
-    # Ler metadados
-    metadata_df = spark.read.format("parquet").load(metadata_path)
-    metadata_bytes = metadata_df.collect()[0]["metadata_binary"]
-    metadata = pickle.loads(metadata_bytes)
-    
-    model_version = metadata["model_name"]
-    print(f"✓ Metadados carregados")
-    print(f"  Modelo: {metadata['model_type']}")
-    print(f"  Features: {metadata['n_features']}")
-    print(f"  AUC-ROC: {metadata['metrics']['auc_roc']:.4f}")
-    print(f"  Data treino: {metadata['train_date']}")
-    
-except Exception as e:
-    raise Exception(f"Erro ao carregar modelo do volume: {e}")
+print(f"Carregando modelo: {model_uri}")
+model = mlflow.sklearn.load_model(model_uri)
+
+client = MlflowClient()
+champion_version = client.get_model_version_by_alias(model_name, "champion")
+champion_metrics = client.get_run(champion_version.run_id).data.metrics
+model_version = champion_version.version
+
+print(f"✓ Modelo carregado: {model_uri} (v{model_version})")
+print(f"  AUC-ROC: {champion_metrics.get('auc_roc', float('nan')):.4f}")
 
 # COMMAND ----------
 

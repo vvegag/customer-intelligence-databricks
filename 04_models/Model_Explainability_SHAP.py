@@ -84,13 +84,21 @@ print(f"Tipo de modelo: {type(model).__name__}")
 # Carregar features de clientes
 df_features = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_features")).toPandas()
 
-# Selecionar features usadas no treinamento (excluir customer_id e target)
+# Selecionar features usadas no treinamento (tem que ser exatamente as mesmas
+# e na mesma ordem de "Modelo Churn Prediction.py" — o modelo foi treinado com
+# essa lista, não com nomes "parecidos")
 feature_cols = [
-    'recency_days', 'frequency_count', 'monetary_total',
-    'avg_order_value', 'days_since_first_purchase', 'purchase_frequency',
-    'total_products_purchased', 'unique_products_purchased',
-    'avg_products_per_order', 'recency_segment', 'frequency_segment',
-    'monetary_segment', 'rfm_score'
+    "age", "customer_age_days",
+    "recency_days", "frequency", "monetary_total", "monetary_avg",
+    "customer_lifetime_days", "purchase_frequency_per_day",
+    "unique_products_purchased", "total_items_purchased",
+    "event_count_30d", "session_count_30d", "engagement_score_30d",
+    "page_views_30d", "product_views_30d", "add_to_cart_30d",
+    "event_count_60d", "session_count_60d", "engagement_score_60d",
+    "event_count_90d", "session_count_90d", "engagement_score_90d",
+    "total_campaigns_exposed", "treatment_campaigns_count",
+    "total_responses", "total_conversions",
+    "response_rate", "conversion_rate"
 ]
 
 X_test = df_features[feature_cols].fillna(0)
@@ -268,7 +276,7 @@ for feature in top_features:
         print("   ✅ Ação: Campanhas de reativação para clientes inativos >30 dias")
         print("   📊 Recomendação: Email automation baseado em tempo desde última compra\n")
     
-    elif feature == 'frequency_count':
+    elif feature == 'frequency':
         print("2️⃣ FREQUENCY (Número de compras)")
         print("   ⚠️  Impacto: Quanto MENOR a frequência, MAIOR o risco")
         print("   ✅ Ação: Programa de fidelidade para aumentar engajamento")

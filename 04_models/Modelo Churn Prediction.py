@@ -223,37 +223,40 @@ print(feature_importance.head(10).to_string(index=False))
 signature = infer_signature(X_train, model.predict_proba(X_train))
 input_example = X_train.iloc[:5]
 
-# Registrar modelo no MLflow (sem tracking context para evitar problemas com serverless)
-print("\nRegistrando modelo no MLflow...")
+# Registrar modelo no Unity Catalog Model Registry (não o registry legado por
+# workspace, que falha no serverless por depender de spark.mlflow.modelRegistryUri
+# — ver docs/05_MIGRATION.md para o histórico desse bug). Usa alias Champion/
+# Challenger em vez de número de versão fixo: quem consome o modelo (SHAP,
+# Batch Scoring, Model Serving, Retraining) sempre aponta pro mesmo nome+alias
+# (models:/{model_name}@Champion), sem precisar saber a versão exata.
+print("\nRegistrando modelo no Unity Catalog Model Registry...")
+mlflow.set_registry_uri("databricks-uc")
+model_name = f"{CATALOG}.{SCHEMA_GOLD}.churn_model"
+
+with mlflow.start_run(run_name="churn_xgboost_v1") as run:
+    mlflow.log_params(params)
+    mlflow.log_metrics(metrics)
+    model_info = mlflow.sklearn.log_model(
+        model,
+        "model",
+        signature=signature,
+        input_example=input_example,
+        registered_model_name=model_name
+    )
+    run_id = run.info.run_id
+
+from mlflow.tracking import MlflowClient
+client = MlflowClient()
 try:
-    model_name = f"{MODEL_REGISTRY_NAME_PREFIX}_churn"
-    
-    # Criar um temp directory para salvar o modelo
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        model_path = os.path.join(tmp_dir, "model")
-        
-        # Salvar modelo localmente primeiro
-        mlflow.sklearn.save_model(
-            model,
-            model_path,
-            signature=signature,
-            input_example=input_example
-        )
-        
-        # Registrar no MLflow
-        mlflow.register_model(
-            f"file://{model_path}",
-            model_name
-        )
-    
-    print(f"✓ Modelo registrado: {model_name}")
-    run_id = "serverless_mode"
-except Exception as e:
-    print(f"⚠️ Erro ao registrar modelo: {e}")
-    print("   O modelo foi treinado, mas não foi registrado no MLflow.")
-    print("   Você pode usar o modelo em memória ou registrá-lo manualmente.")
-    run_id = "failed_registration"
-    
+    current_champion = client.get_model_version_by_alias(model_name, "champion")
+    client.set_registered_model_alias(model_name, "challenger", current_champion.version)
+    print(f"✓ Champion anterior (v{current_champion.version}) rebaixado para challenger")
+except Exception:
+    print("ℹ️ Primeira execução — ainda não existia um champion registrado")
+
+client.set_registered_model_alias(model_name, "champion", model_info.registered_model_version)
+print(f"✓ Modelo registrado: {model_name}@champion (v{model_info.registered_model_version})")
+
 print("\n" + "="*60)
 print("RESULTADOS DO MODELO")
 print("="*60)
@@ -266,71 +269,7 @@ print("="*60)
 print(feature_importance.head(10).to_string(index=False))
 
 print(f"\n✓ Run ID: {run_id}")
-
-# COMMAND ----------
-
-# DBTITLE 1,3.1 Salvar Modelo em UC Volume
-# Salvar modelo treinado em Unity Catalog Volume
-import pickle
-from datetime import datetime
-import os
-
-print("Salvando modelo em UC Volume...")
-
-# 1. Criar volume/diretório se não existir
-volume_path = '/Volumes/customer_intelligence/gold/models'
-
-try:
-    # Criar volume se não existir
-    spark.sql(f"""
-        CREATE VOLUME IF NOT EXISTS {CATALOG}.{SCHEMA_GOLD}.models
-        COMMENT 'Volume para armazenar modelos de ML treinados'
-    """)
-    print(f"✓ Volume verificado: {CATALOG}.{SCHEMA_GOLD}.models")
-except Exception as e:
-    print(f"⚠️ Aviso ao criar volume: {e}")
-    print("   Continuando com o caminho existente...")
-
-# Verificar se o diretório existe, se não criar
-try:
-    dbutils.fs.ls(volume_path)
-    print(f"✓ Diretório existe: {volume_path}")
-except:
-    print(f"✓ Diretório criado: {volume_path}")
-
-# 2. Salvar modelo usando pickle
-model_file_path = f'{volume_path}/churn_model_v1.pkl'
-with open(model_file_path.replace('/Volumes', '/dbfs/Volumes'), 'wb') as f:
-    pickle.dump(model, f)
-print(f"✓ Modelo salvo: {model_file_path}")
-
-# 3. Salvar metadados
-metadata = {
-    'model_name': 'churn_model_v1',
-    'model_type': 'XGBoostClassifier',
-    'features': feature_cols,
-    'n_features': len(feature_cols),
-    'metrics': metrics,
-    'train_date': datetime.now().isoformat(),
-    'train_samples': len(X_train),
-    'test_samples': len(X_test),
-    'params': params,
-    'feature_importance': feature_importance.to_dict('records')
-}
-
-metadata_file_path = f'{volume_path}/churn_model_v1_metadata.pkl'
-with open(metadata_file_path.replace('/Volumes', '/dbfs/Volumes'), 'wb') as f:
-    pickle.dump(metadata, f)
-print(f"✓ Metadados salvos: {metadata_file_path}")
-
-print("\n" + "="*60)
-print("MODELO PERSISTIDO COM SUCESSO")
-print("="*60)
-print(f"📦 Modelo: {model_file_path}")
-print(f"📋 Metadados: {metadata_file_path}")
-print(f"📊 Features: {len(feature_cols)}")
-print(f"🎯 AUC-ROC: {metrics['auc_roc']:.4f}")
-print("\n✅ Pronto para usar no Batch Scoring!")
+print(f"✓ Modelo disponível em: models:/{model_name}@champion")
 
 # COMMAND ----------
 
