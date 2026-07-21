@@ -50,7 +50,7 @@ resources:
       tasks:
         - task_key: update_features
           notebook_task:
-            notebook_path: ./03_gold/Feature_Store_Production.py
+            notebook_path: ./production/feature_store/feature_store_complete.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}

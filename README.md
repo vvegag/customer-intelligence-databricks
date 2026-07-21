@@ -49,8 +49,7 @@ customer-intelligence-databricks/
 ├── 02_silver/
 │   └── Transformacao Silver.py                # Limpeza e transformação
 ├── 03_gold/
-│   ├── Feature Engineering Gold.py            # RFM, behavioral, campaign features
-│   └── Feature_Store_Production.py            # Feature Store (offline + online)
+│   └── Feature Engineering Gold.py            # RFM, behavioral, campaign features
 ├── 04_models/
 │   ├── Modelo Churn Prediction.py             # XGBoost + MLflow (fluxo principal)
 │   ├── Modelo Propensity Score.py             # Probabilidade de compra
