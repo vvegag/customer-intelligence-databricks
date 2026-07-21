@@ -16,6 +16,12 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Instalar dependências
+# MAGIC %pip install --upgrade numpy xgboost scikit-learn --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # DBTITLE 1,Configuração
 # Configs inline
 from pyspark.sql import functions as F
@@ -27,7 +33,8 @@ CATALOG = "customer_intelligence"
 SCHEMA_BRONZE = "bronze"
 SCHEMA_SILVER = "silver"
 SCHEMA_GOLD = "gold"
-MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+CURRENT_USER = spark.sql("SELECT current_user()").collect()[0][0]
+MLFLOW_EXPERIMENT_PATH = f"/Users/{CURRENT_USER}/customer_intelligence_experiments"
 MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
 
 def get_full_table_name(schema, table):
@@ -62,12 +69,6 @@ warnings.filterwarnings('ignore')
 
 print("✓ Configuração carregada")
 print(f"  Catalog: {CATALOG}")
-
-# COMMAND ----------
-
-# DBTITLE 1,Instalar dependências
-# MAGIC %pip install --upgrade numpy xgboost scikit-learn --quiet
-# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 

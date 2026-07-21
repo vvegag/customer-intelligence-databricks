@@ -36,7 +36,8 @@ CATALOG = "customer_intelligence"
 SCHEMA_BRONZE = "bronze"
 SCHEMA_SILVER = "silver"
 SCHEMA_GOLD = "gold"
-MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+CURRENT_USER = spark.sql("SELECT current_user()").collect()[0][0]
+MLFLOW_EXPERIMENT_PATH = f"/Users/{CURRENT_USER}/customer_intelligence_experiments"
 MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
 
 # Helper functions

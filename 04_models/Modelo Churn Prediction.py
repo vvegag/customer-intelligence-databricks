@@ -36,8 +36,9 @@ SCHEMA_BRONZE = "bronze"
 SCHEMA_SILVER = "silver"
 SCHEMA_GOLD = "gold"
 
-# Configurações MLflow
-MLFLOW_EXPERIMENT_PATH = "/Users/valdomirovega@hotmail.com/customer_intelligence_experiments"
+# Configurações MLflow (usuário detectado dinamicamente, funciona em qualquer conta)
+CURRENT_USER = spark.sql("SELECT current_user()").collect()[0][0]
+MLFLOW_EXPERIMENT_PATH = f"/Users/{CURRENT_USER}/customer_intelligence_experiments"
 DATA_PATH = "/FileStore/customer_intelligence/data"
 MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
 
