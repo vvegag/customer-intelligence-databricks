@@ -402,6 +402,12 @@ databricks bundle deploy --target dev
 databricks bundle run ml_training_pipeline --target dev
 ```
 
+> 💡 O `databricks.yml` não fixa o workspace (`host`) — ele usa o profile do CLI
+> ativo no momento do deploy. Se você tiver mais de uma conta configurada
+> (`~/.databrickscfg`), especifique qual usar com `--profile <nome>` em
+> qualquer um dos comandos acima. Assim o mesmo bundle funciona tanto numa
+> conta nova quanto na máquina de quem for avaliar o projeto.
+
 ---
 
 ## 📊 Resumo de Impacto:

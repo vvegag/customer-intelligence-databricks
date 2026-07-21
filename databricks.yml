@@ -17,13 +17,14 @@ variables:
 
 targets:
   # DEVELOPMENT environment
-  # ⚠️ workspace.host não aceita variável (limitação do Databricks Asset Bundles —
-  # o host precisa ser resolvido antes da interpolação). Ao trocar de conta/workspace,
-  # atualize o valor abaixo manualmente nos dois targets.
+  # workspace.host propositalmente OMITIDO: o bundle usa o host do profile do
+  # CLI ativo no momento do deploy (`databricks bundle deploy -p <profile>`).
+  # Assim funciona em qualquer conta/workspace sem editar este arquivo — útil
+  # tanto pra trocar de conta quanto pra alguém avaliando o projeto rodar com
+  # a própria conta.
   dev:
     mode: development
     workspace:
-      host: https://dbc-58d2306a-6a4b.cloud.databricks.com
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
 
     variables:
@@ -34,7 +35,6 @@ targets:
   prod:
     mode: production
     workspace:
-      host: https://dbc-58d2306a-6a4b.cloud.databricks.com
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
 
     variables:
