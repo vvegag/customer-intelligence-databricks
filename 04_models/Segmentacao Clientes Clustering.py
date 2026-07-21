@@ -148,20 +148,26 @@ print(f"  - Features usadas: {', '.join(cluster_features)}")
 # COMMAND ----------
 
 # DBTITLE 1,Insights por Segmento
-# Juntar com scores de churn e propensão para insights
-df_churn = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_scores")).select("customer_id", "churn_probability")
-df_segments_insights = df_segments_spark.join(df_churn, "customer_id", "left")
+# Juntar com scores de churn para insights (opcional: depende do Batch Scoring
+# em 05_scoring já ter rodado e criado customer_scores; se ainda não rodou,
+# a segmentação em si já foi salva acima e continua válida sem este resumo)
+if spark.catalog.tableExists(get_full_table_name(SCHEMA_GOLD, "customer_scores")):
+    df_churn = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_scores")).select("customer_id", "churn_probability")
+    df_segments_insights = df_segments_spark.join(df_churn, "customer_id", "left")
 
-# Calcular métricas por segmento
-df_segment_insights = df_segments_insights.groupBy("segment_name").agg(
-    F.count("customer_id").alias("count"),
-    F.avg("churn_probability").alias("avg_churn_risk")
-).orderBy(F.desc("count"))
+    # Calcular métricas por segmento
+    df_segment_insights = df_segments_insights.groupBy("segment_name").agg(
+        F.count("customer_id").alias("count"),
+        F.avg("churn_probability").alias("avg_churn_risk")
+    ).orderBy(F.desc("count"))
 
-print("\n" + "="*80)
-print("INSIGHTS POR SEGMENTO")
-print("="*80)
-df_segment_insights.show(truncate=False)
+    print("\n" + "="*80)
+    print("INSIGHTS POR SEGMENTO")
+    print("="*80)
+    df_segment_insights.show(truncate=False)
+else:
+    print("⚠️ Tabela customer_scores ainda não existe — execute 05_scoring/Batch Scoring")
+    print("   primeiro para ver o cruzamento de segmentos com risco de churn.")
 
 print("\n✅ Segmentação completa! Use para marketing direcionado.")
 

@@ -72,6 +72,10 @@ Clique: Run All
 Tempo: ~3 minutos
 Output: 5 segmentos comportamentais
 ```
+> 💡 A tabela `customer_segments` é criada independente de qualquer outra coisa.
+> A última célula ("Insights por Segmento") cruza os segmentos com o risco de
+> churn — para ela mostrar esse cruzamento, rode `05_scoring/Batch Scoring`
+> antes. Se ainda não rodou, a célula avisa e segue sem quebrar o notebook.
 
 ---
 
