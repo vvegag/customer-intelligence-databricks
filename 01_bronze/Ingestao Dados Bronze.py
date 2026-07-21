@@ -26,7 +26,7 @@ import os
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-from pyspark.sql import functions as F
+from pyspark.sql import functions as F, Window
 from pyspark.sql.types import *
 import random
 
@@ -221,36 +221,42 @@ df_campaigns.show(5)
 # COMMAND ----------
 
 # DBTITLE 1,5. Exposições a Campanhas (campaign_exposures_raw)
-# Simular exposições a campanhas (quem viu cada campanha)
+# Simular exposições a campanhas (quem viu cada campanha) — 100% vetorizado em
+# PySpark, sem loop Python e sem ação Spark repetida (a versão anterior chamava
+# .filter().first() 30.000 vezes dentro do loop, o que sozinho já custava minutos
+# de overhead de agendamento de job por iteração).
 N_EXPOSURES = 30000
 
-# Extrai todos os IDs de campanhas da tabela campaigns_raw para uma lista
-# 'row.campaign_id' refere-se ao valor da coluna 'campaign_id' em cada linha (row) retornada pelo método .collect() do DataFrame 'df_campaigns'
-campaign_ids = [row.campaign_id for row in df_campaigns.select("campaign_id").collect()]
+# Índice numérico sequencial para clientes e campanhas, para permitir "escolher
+# um valor aleatório" via join em vez de random.choice() célula a célula
+customers_indexed = (
+    df_customers.select("customer_id")
+    .withColumn("idx", F.row_number().over(Window.orderBy(F.monotonically_increasing_id())) - 1)
+)
+n_customers = customers_indexed.count()
 
-exposure_data = []
-for i in range(N_EXPOSURES):
-    campaign_id = random.choice(campaign_ids)
-    customer_id = random.choice(customer_ids)
-    
-    # Buscar datas da campanha
-    campaign_info = df_campaigns.filter(F.col("campaign_id") == campaign_id).first()
-    exposure_date = campaign_info.start_date + timedelta(days=random.randint(0, (campaign_info.end_date - campaign_info.start_date).days))
-    
-    # Randomizar grupo de controle vs tratamento
-    is_control = random.random() < 0.3  # 30% controle
-    
-    exposure_data.append({
-        "exposure_id": f"EXP_{i+1:08d}",
-        "campaign_id": campaign_id,
-        "customer_id": customer_id,
-        "exposure_date": exposure_date,
-        "is_control_group": is_control,
-        "channel": campaign_info.campaign_type,
-        "created_at": datetime.now()
-    })
+campaigns_indexed = (
+    df_campaigns.select("campaign_id", "campaign_type", "start_date", "end_date")
+    .withColumn("idx", F.row_number().over(Window.orderBy(F.monotonically_increasing_id())) - 1)
+)
+n_campaigns = campaigns_indexed.count()
 
-df_exposures = spark.createDataFrame(pd.DataFrame(exposure_data))
+df_exposures = (
+    spark.range(N_EXPOSURES)
+    .withColumnRenamed("id", "row_id")
+    .withColumn("customer_idx", (F.rand(seed=42) * n_customers).cast("int"))
+    .withColumn("campaign_idx", (F.rand(seed=43) * n_campaigns).cast("int"))
+    .join(F.broadcast(customers_indexed), F.col("customer_idx") == customers_indexed.idx)
+    .join(F.broadcast(campaigns_indexed), F.col("campaign_idx") == campaigns_indexed.idx)
+    .withColumn("exposure_id", F.concat(F.lit("EXP_"), F.lpad((F.col("row_id") + 1).cast("string"), 8, "0")))
+    .withColumn("days_range", F.greatest(F.datediff("end_date", "start_date"), F.lit(0)))
+    .withColumn("exposure_date", F.expr("date_add(start_date, cast(rand(44) * days_range as int))"))
+    .withColumn("is_control_group", F.rand(seed=45) < 0.3)  # 30% controle
+    .withColumn("channel", F.col("campaign_type"))
+    .withColumn("created_at", F.current_timestamp())
+    .select("exposure_id", "campaign_id", "customer_id", "exposure_date", "is_control_group", "channel", "created_at")
+)
+
 create_or_replace_table(df_exposures, SCHEMA_BRONZE, "campaign_exposures_raw")
 
 print(f"✓ Criadas {N_EXPOSURES} exposições")
@@ -259,37 +265,33 @@ df_exposures.show(5)
 # COMMAND ----------
 
 # DBTITLE 1,6. Respostas a Campanhas (campaign_responses_raw)
-# Simular respostas a campanhas
+# Simular respostas a campanhas — também vetorizado: taxa de resposta diferente
+# por grupo controle/tratamento, sem iterar linha a linha em Python.
 # Taxa de resposta realista: ~5-15% dependendo do grupo
 
-response_data = []
-exposures_list = df_exposures.collect()
+df_responses = (
+    df_exposures
+    .withColumn("response_rate", F.when(F.col("is_control_group"), 0.05).otherwise(0.12))
+    .withColumn("responded", F.rand(seed=46) < F.col("response_rate"))
+    .filter(F.col("responded"))
+    .withColumn("response_date", F.expr("date_add(exposure_date, cast(rand(47) * 7 as int))"))
+    .withColumn(
+        "response_type",
+        F.element_at(F.array(F.lit("Purchase"), F.lit("Click"), F.lit("Sign Up")), (F.floor(F.rand(seed=48) * 3) + 1).cast("int"))
+    )
+    .withColumn(
+        "response_value",
+        F.when(F.rand(seed=49) < 0.7, F.round(F.rand(seed=50) * 490 + 10, 2)).otherwise(F.lit(0.0))
+    )
+    .withColumn("created_at", F.current_timestamp())
+    .withColumn("response_id", F.concat(F.lit("RESP_"), F.lpad(F.row_number().over(Window.orderBy(F.monotonically_increasing_id())).cast("string"), 8, "0")))
+    .select("response_id", "exposure_id", "campaign_id", "customer_id", "response_date", "response_type", "response_value", "created_at")
+)
 
-for exposure in exposures_list:
-    # Taxa de resposta diferente para controle vs tratamento
-    if exposure.is_control_group:
-        response_rate = 0.05  # 5% taxa base
-    else:
-        response_rate = 0.12  # 12% com campanha
-    
-    if random.random() < response_rate:
-        response_date = exposure.exposure_date + timedelta(days=random.randint(0, 7))
-        
-        response_data.append({
-            "response_id": f"RESP_{len(response_data)+1:08d}",
-            "exposure_id": exposure.exposure_id,
-            "campaign_id": exposure.campaign_id,
-            "customer_id": exposure.customer_id,
-            "response_date": response_date,
-            "response_type": random.choice(["Purchase", "Click", "Sign Up"]),
-            "response_value": round(random.uniform(10, 500), 2) if random.random() < 0.7 else 0,
-            "created_at": datetime.now()
-        })
-
-df_responses = spark.createDataFrame(pd.DataFrame(response_data))
 create_or_replace_table(df_responses, SCHEMA_BRONZE, "campaign_responses_raw")
 
-print(f"✓ Criadas {len(response_data)} respostas")
+n_responses = df_responses.count()
+print(f"✓ Criadas {n_responses} respostas")
 df_responses.show(5)
 
 # COMMAND ----------
