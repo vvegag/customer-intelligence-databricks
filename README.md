@@ -31,27 +31,51 @@ Bronze (Raw Data)     →     Silver (Clean)     →     Gold (Features & Scores
 ## 📁 Estrutura do Projeto
 
 ```
-customer_intelligence_project/
+customer-intelligence-databricks/
 ├── 00_setup/
-│   └── Config e Setup Inicial.ipynb          # Configurações, schemas, helpers
+│   └── Config e Setup Inicial.ipynb          # Cria catálogo, schemas, helpers, MLflow
 ├── 01_bronze/
-│   └── Ingestao Dados Bronze.ipynb           # Simulação de dados raw
+│   └── Ingestao Dados Bronze.py               # Simulação de dados raw
 ├── 02_silver/
-│   └── Transformacao Silver.ipynb            # Limpeza e transformação
+│   └── Transformacao Silver.py                # Limpeza e transformação
 ├── 03_gold/
-│   └── Feature Engineering Gold.ipynb       # RFM, behavioral, campaign features
+│   ├── Feature Engineering Gold.py            # RFM, behavioral, campaign features
+│   └── Feature_Store_Production.py            # Feature Store (offline + online)
 ├── 04_models/
-│   └── Modelo Churn Prediction.ipynb        # XGBoost + MLflow
+│   ├── Modelo Churn Prediction.py             # XGBoost + MLflow (fluxo principal)
+│   ├── Modelo Propensity Score.py             # Probabilidade de compra
+│   ├── Segmentacao Clientes Clustering.py     # K-Means (5 segmentos)
+│   ├── Sistema Recomendacao.py                # Next best action
+│   ├── AutoML Databricks Churn.py             # Comparação com Databricks AutoML
+│   ├── Automated Model Retraining.py          # Pipeline de retreino automático
+│   ├── Model_Explainability_SHAP.py           # Explicabilidade (waterfall/dependence/force plot)
+│   └── Model_Serving_Deployment.py            # Deploy do modelo em endpoint REST
 ├── 05_scoring/
-│   └── Batch Scoring.ipynb                  # Scoring em lote
+│   └── Batch Scoring.py                       # Scoring em lote
 ├── 06_experimentation/
-│   └── AB Testing e Causal Inference.ipynb  # Controle vs Tratamento, Lift, ROAS
+│   └── AB Testing e Causal Inference.py       # Controle vs Tratamento, Lift, ROAS
 ├── 07_monitoring/
-│   └── Monitoramento Performance.ipynb      # Drift detection, KPIs
+│   └── Monitoramento Performance.py           # Drift detection, KPIs
 ├── 08_dashboards/
-│   └── SQL Queries para Dashboards.ipynb    # Queries prontas para BI
-└── README.md                                # Este arquivo
+│   └── SQL Queries para Dashboards.ipynb      # Queries prontas para BI
+├── 09_integrations/
+│   └── CRM Integration.py                     # Integração com CRM (Salesforce/HubSpot)
+├── production/                                # Notebooks "avançados", fora do fluxo principal
+│   ├── cicd/DABs_CI_CD_Complete.py            # Infra as Code + CI/CD (Databricks Asset Bundles)
+│   ├── feature_store/feature_store_complete.py
+│   ├── models/mlflow_advanced.py              # MLflow: nested runs, aliases Champion/Challenger
+│   ├── models/sparkml_distributed.py          # Treino distribuído com SparkML
+│   └── pipelines/Delta_Live_Tables_Advanced.py # Delta Live Tables (Auto Loader, CDC, SCD2)
+├── docs/                                      # Documentação detalhada (ver seção abaixo)
+├── databricks.yml                             # Databricks Asset Bundle
+├── requirements.txt
+└── README.md                                  # Este arquivo
 ```
+
+> `00_setup` e `08_dashboards` estão em formato Jupyter (`.ipynb`); todo o resto é
+> formato "Databricks source" (`.py` com `# Databricks notebook source`) — ambos
+> abrem normalmente como notebook dentro do Databricks, a diferença só aparece no
+> diff do Git.
 
 ---
 
@@ -74,7 +98,8 @@ customer_intelligence_project/
 # Executar primeiro
 00_setup/Config e Setup Inicial
 ```
-Cria schemas `customer_intelligence_bronze`, `silver`, `gold` e configura MLflow.
+Cria o catálogo `customer_intelligence` e os schemas `bronze`, `silver`, `gold`,
+e configura o experimento MLflow (detecta o usuário logado automaticamente).
 
 ### 2. Ingestão (Bronze)
 ```bash
@@ -106,12 +131,21 @@ Cria features:
 
 ### 5. Modelagem
 ```bash
-04_models/Modelo Churn Prediction
+04_models/Modelo Churn Prediction      # obrigatório — os demais dependem deste
 ```
 Treina modelo XGBoost:
 - AUC-ROC, Precision, Recall, F1
 - Feature importance
-- Registra no MLflow Model Registry
+- Registra no MLflow / salva em Volume do Unity Catalog
+
+Opcionais, no mesmo diretório (cada um roda de forma independente):
+- `Modelo Propensity Score` — probabilidade de compra nos próximos 30 dias
+- `Segmentacao Clientes Clustering` — K-Means, 5 segmentos comportamentais
+- `Sistema Recomendacao` — próxima melhor ação por cliente
+- `AutoML Databricks Churn` — comparação com Databricks AutoML
+- `Model_Explainability_SHAP` — waterfall/dependence/force plot para o modelo de churn
+- `Model_Serving_Deployment` — publica o modelo de churn como endpoint REST
+- `Automated Model Retraining` — pipeline de retreino agendado
 
 ### 6. Scoring
 ```bash
@@ -295,7 +329,7 @@ Toda a documentação do projeto está organizada na pasta `/docs/`:
 |-----------|-----------|
 | [01_PROJETO_OVERVIEW.md](docs/01_PROJETO_OVERVIEW.md) | Overview do projeto, checklist e roadmap |
 | [02_PLANO_SEMANA.md](docs/02_PLANO_SEMANA.md) | Plano da semana e gaps para entrevistas |
-| [03_NOTEBOOKS_GUIDE.md](docs/03_NOTEBOOKS_GUIDE.md) | Guia dos 5 notebooks production-ready |
+| [03_NOTEBOOKS_GUIDE.md](docs/03_NOTEBOOKS_GUIDE.md) | Guia passo a passo de execução, do setup aos notebooks de `production/` |
 | [04_APRESENTACAO.md](docs/04_APRESENTACAO.md) | Apresentação executiva e scripts de entrevista |
 | [05_MIGRATION.md](docs/05_MIGRATION.md) | Guia de migração e correções |
 

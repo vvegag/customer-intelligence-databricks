@@ -158,16 +158,16 @@ TEMPO TOTAL: ~23 minutos
 ### Tabelas Criadas
 ```sql
 -- Listar todas as tabelas
-SHOW TABLES IN main.customer_intelligence_gold;
+SHOW TABLES IN customer_intelligence.gold;
 
 -- Verificar scores de churn
-SELECT * FROM main.customer_intelligence_gold.customer_scores
+SELECT * FROM customer_intelligence.gold.customer_scores
 WHERE churn_risk_category = 'High'
 ORDER BY churn_probability DESC
 LIMIT 10;
 
 -- Verificar resultados de experimentos
-SELECT * FROM main.customer_intelligence_gold.campaign_ab_test_results
+SELECT * FROM customer_intelligence.gold.campaign_ab_test_results
 WHERE is_significant_chi2 = true
 ORDER BY lift_pct DESC;
 ```
@@ -176,8 +176,9 @@ ORDER BY lift_pct DESC;
 ```python
 import mlflow
 
-# Ver experimentos
-mlflow.set_experiment("/Users/valdomirovega@hotmail.com/customer_intelligence_experiments")
+# Ver experimentos (o path usa o usuário logado, detectado automaticamente)
+current_user = spark.sql("SELECT current_user()").collect()[0][0]
+mlflow.set_experiment(f"/Users/{current_user}/customer_intelligence_experiments")
 experiments = mlflow.search_experiments()
 
 # Ver modelos registrados
@@ -224,16 +225,19 @@ for model in models:
 
 ### Estrutura de Pastas
 ```
-customer_intelligence_project/
-├── 00_setup/          # Começar aqui
-├── 01_bronze/         # Dados raw
-├── 02_silver/         # Dados limpos
-├── 03_gold/           # Features
-├── 04_models/         # ML models
-├── 05_scoring/        # Batch scoring
-├── 06_experimentation/ # A/B test
-├── 07_monitoring/     # Drift & KPIs
-└── 08_dashboards/     # SQL queries
+customer-intelligence-databricks/
+├── 00_setup/            # Começar aqui
+├── 01_bronze/           # Dados raw
+├── 02_silver/           # Dados limpos
+├── 03_gold/             # Features
+├── 04_models/           # ML models (churn, propensity, segmentação, etc.)
+├── 05_scoring/          # Batch scoring
+├── 06_experimentation/  # A/B test
+├── 07_monitoring/       # Drift & KPIs
+├── 08_dashboards/       # SQL queries
+├── 09_integrations/     # CRM
+├── production/          # Notebooks avançados (CI/CD, DLT, feature store, MLflow avançado)
+└── docs/                # Esta documentação
 ```
 
 ---
@@ -311,55 +315,27 @@ _Comece pelo notebook `00_setup/Config e Setup Inicial` e siga a numeração._
 
 ---
 
-## 📁 ESTRUTURA DOS NOTEBOOKS
+## 📁 NOTEBOOKS AVANÇADOS (production/)
 
-# 📚 Notebooks Production-Ready
-
-## 🎯 5 Notebooks Avançados Implementados
-
-### 📂 Estrutura:
+Além do pipeline principal (00 a 09), o projeto tem 5 notebooks que demonstram
+práticas mais avançadas de plataforma — não fazem parte do fluxo obrigatório,
+são material extra pra portfólio/estudo. Ficam organizados em `production/`,
+já dentro do Repo Git (não precisam de nenhuma movimentação manual):
 
 ```
-customer-intelligence-databricks/
-├── 03_gold/
-│   └── Feature_Store_Complete              ⭐ DIA 1
-├── 04_models/
-│   ├── MLflow_Advanced                     ⭐ DIA 2
-│   └── SparkML_Pipelines_Distributed      ⭐ DIA 4
-├── 05_pipelines/
-│   └── Delta_Live_Tables_Advanced         ⭐ DIA 3
-└── 06_cicd/
-    └── DABs_CI_CD_Complete                ⭐ DIA 5
+production/
+├── feature_store/feature_store_complete.py     ⭐ Feature Store
+├── models/mlflow_advanced.py                   ⭐ MLflow avançado
+├── models/sparkml_distributed.py                ⭐ Treino distribuído
+├── pipelines/Delta_Live_Tables_Advanced.py      ⭐ Delta Live Tables
+└── cicd/DABs_CI_CD_Complete.py                  ⭐ CI/CD (Asset Bundles)
 ```
-
----
-
-## 📍 Localização dos Notebooks:
-
-### ⚠️ IMPORTANTE: Notebooks criados em /Workspace/Users/
-
-Os 5 notebooks production-ready foram criados em:
-```
-/Workspace/Users/valdomirovega@hotmail.com/customer-intelligence-databricks/
-```
-
-### ✅ PARA USAR COM DABs + CI/CD:
-
-**Opção 1: Mover para Git Repo (Recomendado)**
-1. Abrir Workspace no Databricks UI
-2. Navegar até `/Users/valdomirovega@hotmail.com/customer-intelligence-databricks/`
-3. Mover cada notebook (drag & drop ou cut/paste) para:
-   `/Repos/valdomirovega@hotmail.com/customer-intelligence-databricks/`
-
-**Opção 2: Ajustar paths no databricks.yml**
-- Atualizar `notebook_path` para referenciar `/Workspace/Users/...`
 
 ---
 
 ## 🎯 Notebooks Detalhados:
 
-### 1️⃣ **Feature_Store_Complete** (03_gold/)
-- **Dia:** 1 (Segunda)
+### 1️⃣ **feature_store_complete** (production/feature_store/)
 - **Capabilities:**
   - Offline Feature Tables
   - Online Feature Tables (low-latency serving)
@@ -368,8 +344,7 @@ Os 5 notebooks production-ready foram criados em:
   - Feature Lineage
 - **Status:** ✅ Production-Ready
 
-### 2️⃣ **MLflow_Advanced** (04_models/)
-- **Dia:** 2 (Terça)
+### 2️⃣ **mlflow_advanced** (production/models/)
 - **Capabilities:**
   - Nested Runs (parent/child hierarchy)
   - Custom Business Metrics
@@ -378,8 +353,7 @@ Os 5 notebooks production-ready foram criados em:
   - Automatic Promotion Workflow
 - **Status:** ✅ Production-Ready
 
-### 3️⃣ **Delta_Live_Tables_Advanced** (05_pipelines/)
-- **Dia:** 3 (Quarta)
+### 3️⃣ **Delta_Live_Tables_Advanced** (production/pipelines/)
 - **Capabilities:**
   - Medallion Architecture (Bronze/Silver/Gold)
   - Auto Loader (incremental ingestion)
@@ -389,8 +363,7 @@ Os 5 notebooks production-ready foram criados em:
   - Change Data Feed (CDC)
 - **Status:** ✅ Production-Ready
 
-### 4️⃣ **SparkML_Pipelines_Distributed** (04_models/)
-- **Dia:** 4 (Quinta)
+### 4️⃣ **sparkml_distributed** (production/models/)
 - **Capabilities:**
   - Distributed Training
   - ML Pipelines (VectorAssembler, StandardScaler, Model)
@@ -399,8 +372,7 @@ Os 5 notebooks production-ready foram criados em:
   - Feature Importance
 - **Status:** ✅ Production-Ready
 
-### 5️⃣ **DABs_CI_CD_Complete** (06_cicd/)
-- **Dia:** 5 (Sexta)
+### 5️⃣ **DABs_CI_CD_Complete** (production/cicd/)
 - **Capabilities:**
   - Infrastructure as Code (databricks.yml)
   - Unit Tests (pytest)
