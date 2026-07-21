@@ -107,11 +107,11 @@ Este documento consolida o overview geral do projeto, checklist e roadmap.
 ---
 
 ### 3️⃣ Dashboard Executivo ✅
-**Localização:** `/Users/valdomirovega@hotmail.com/Customer Intelligence - Executive Dashboard...`
+**Localização:** `/Users/<seu-usuario>/Customer Intelligence - Executive Dashboard...`
 
 **⚠️ AÇÃO NECESSÁRIA:** Mover dashboard para o repo Git:
 ```
-Origem: /Users/valdomirovega@hotmail.com/Customer Intelligence...
+Origem: /Users/<seu-usuario>/Customer Intelligence...
 Destino: /Workspace/Repos/.../customer-intelligence-databricks/08_dashboards/
 ```
 
@@ -193,7 +193,7 @@ Destino: /Workspace/Repos/.../customer-intelligence-databricks/08_dashboards/
 
 ### 2. Commit Final no Git ⚠️
 ```bash
-cd /Workspace/Repos/valdomirovega@hotmail.com/customer-intelligence-databricks
+cd /Workspace/Repos/<seu-usuario>/customer-intelligence-databricks
 git status
 git add 04_models/Model_Explainability_SHAP.py
 git add 04_models/Model_Serving_Deployment.py

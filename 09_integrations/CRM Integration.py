@@ -516,7 +516,7 @@ display(sync_result)
 # MAGIC     {
 # MAGIC       "task_key": "sync_to_crm",
 # MAGIC       "notebook_task": {
-# MAGIC         "notebook_path": "/Repos/valdomirovega@hotmail.com/customer-intelligence-databricks/09_integrations/CRM Integration"
+# MAGIC         "notebook_path": "/Repos/<seu-usuario>/customer-intelligence-databricks/09_integrations/CRM Integration"
 # MAGIC       },
 # MAGIC       "new_cluster": {
 # MAGIC         "spark_version": "14.3.x-scala2.12",
@@ -526,8 +526,8 @@ display(sync_result)
 # MAGIC     }
 # MAGIC   ],
 # MAGIC   "email_notifications": {
-# MAGIC     "on_success": ["valdomirovega@hotmail.com"],
-# MAGIC     "on_failure": ["valdomirovega@hotmail.com"]
+# MAGIC     "on_success": ["<seu-usuario@empresa.com>"],
+# MAGIC     "on_failure": ["<seu-usuario@empresa.com>"]
 # MAGIC   },
 # MAGIC   "max_concurrent_runs": 1
 # MAGIC }

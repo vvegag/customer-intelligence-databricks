@@ -567,7 +567,7 @@ print("\n📊 Para obter stats, chame: get_pipeline_stats()")
 # MAGIC   "target": "customer_intelligence.dlt_demo",
 # MAGIC   "notebooks": [
 # MAGIC     {
-# MAGIC       "path": "/Users/valdomirovega@hotmail.com/customer-intelligence-databricks/05_pipelines/Delta_Live_Tables_Advanced"
+# MAGIC       "path": "/Repos/<seu-usuario>/customer-intelligence-databricks/production/pipelines/Delta_Live_Tables_Advanced"
 # MAGIC     }
 # MAGIC   ],
 # MAGIC   "continuous": false,
@@ -597,7 +597,7 @@ print("\n📊 Para obter stats, chame: get_pipeline_stats()")
 # MAGIC     storage="/dbfs/pipelines/customer_intelligence_dlt",
 # MAGIC     target="customer_intelligence.dlt_demo",
 # MAGIC     notebooks=[{
-# MAGIC         "path": "/Users/valdomirovega@hotmail.com/.../Delta_Live_Tables_Advanced"
+# MAGIC         "path": "/Repos/<seu-usuario>/customer-intelligence-databricks/production/pipelines/Delta_Live_Tables_Advanced"
 # MAGIC     }],
 # MAGIC     continuous=False,
 # MAGIC     development=True

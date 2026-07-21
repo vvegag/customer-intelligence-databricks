@@ -501,7 +501,7 @@ display(result)
 # MAGIC     {
 # MAGIC       "task_key": "retrain_churn_model",
 # MAGIC       "notebook_task": {
-# MAGIC         "notebook_path": "/Repos/valdomirovega@hotmail.com/customer-intelligence-databricks/04_models/Automated Model Retraining",
+# MAGIC         "notebook_path": "/Repos/<seu-usuario>/customer-intelligence-databricks/04_models/Automated Model Retraining",
 # MAGIC         "base_parameters": {
 # MAGIC           "model_name": "churn_model"
 # MAGIC         }
@@ -515,7 +515,7 @@ display(result)
 # MAGIC     {
 # MAGIC       "task_key": "retrain_propensity_model",
 # MAGIC       "notebook_task": {
-# MAGIC         "notebook_path": "/Repos/valdomirovega@hotmail.com/customer-intelligence-databricks/04_models/Automated Model Retraining",
+# MAGIC         "notebook_path": "/Repos/<seu-usuario>/customer-intelligence-databricks/04_models/Automated Model Retraining",
 # MAGIC         "base_parameters": {
 # MAGIC           "model_name": "propensity_model"
 # MAGIC         }
@@ -524,8 +524,8 @@ display(result)
 # MAGIC     }
 # MAGIC   ],
 # MAGIC   "email_notifications": {
-# MAGIC     "on_success": ["valdomirovega@hotmail.com"],
-# MAGIC     "on_failure": ["valdomirovega@hotmail.com"]
+# MAGIC     "on_success": ["<seu-usuario@empresa.com>"],
+# MAGIC     "on_failure": ["<seu-usuario@empresa.com>"]
 # MAGIC   },
 # MAGIC   "max_concurrent_runs": 1
 # MAGIC }

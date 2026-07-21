@@ -14,7 +14,7 @@ Este documento consolida o guia de migração e correções de catálogo.
 ## ✅ STATUS DA EXPORTAÇÃO
 
 **Data**: Janeiro 2026  
-**Origem**: Conta atual (valdomirovega@hotmail.com)  
+**Origem**: Conta Databricks Free Edition (créditos esgotados)  
 **Destino**: Nova conta Databricks com créditos
 
 ### 📊 O QUE FOI EXPORTADO
