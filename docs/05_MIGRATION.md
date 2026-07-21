@@ -620,6 +620,11 @@ _Customer Intelligence Platform • Janeiro 2026 • Valdomiro Vega_
 
 ## 🔧 CORREÇÕES DE CATÁLOGO
 
+> 📜 **Nota histórica**: esta seção documenta um bug de uma fase muito anterior
+> do projeto, quando o catálogo se chamava `workspace` (por não existir `main`
+> no workspace da época). O nome final do catálogo é `customer_intelligence`
+> (não `workspace`) — mantido aqui só como exemplo real de troubleshooting.
+
 # ⚙️ Correção do Catálogo - Resolvido
 
 ## 🐛 Problema Encontrado
