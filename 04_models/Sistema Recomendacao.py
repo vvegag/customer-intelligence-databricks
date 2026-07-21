@@ -48,11 +48,16 @@ SCHEMA_SILVER = "silver"
 SCHEMA_BRONZE = "bronze"
 
 def get_full_table_name(schema, table):
+    """Retorna nome completo da tabela"""
     return f"{CATALOG}.{schema}.{table}"
 
-def create_or_replace_table(df, schema, table):
+def create_or_replace_table(df, schema, table, partition_by=None):
+    """Salva DataFrame como tabela Delta"""
     full_name = get_full_table_name(schema, table)
-    df.write.format("delta").mode("overwrite").saveAsTable(full_name)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
     print(f"✓ Tabela criada: {full_name}")
     return full_name
 

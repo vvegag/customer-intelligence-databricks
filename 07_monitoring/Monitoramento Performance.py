@@ -30,9 +30,11 @@ SCHEMA_SILVER = "silver"
 SCHEMA_GOLD = "gold"
 
 def get_full_table_name(schema, table):
+    """Retorna nome completo da tabela"""
     return f"{CATALOG}.{schema}.{table}"
 
 def create_or_replace_table(df, schema, table, partition_by=None):
+    """Salva DataFrame como tabela Delta"""
     full_name = get_full_table_name(schema, table)
     writer = df.write.format("delta").mode("overwrite")
     if partition_by:
@@ -43,6 +45,32 @@ def create_or_replace_table(df, schema, table, partition_by=None):
 
 import warnings
 warnings.filterwarnings('ignore')
+
+# Alertas via Slack (opcional). Para ativar:
+#   1. Crie um Incoming Webhook no Slack (https://api.slack.com/messaging/webhooks)
+#   2. Guarde a URL como secret: databricks secrets put-secret customer_intelligence slack_webhook_url
+# Se o secret não existir, o alerta é só impresso no output — não quebra o notebook.
+import json
+import urllib.request
+
+def send_slack_alert(message: str) -> bool:
+    """Envia uma mensagem para o Slack via Incoming Webhook, se configurado.
+    Retorna True se enviou de verdade, False se só imprimiu (não configurado)."""
+    try:
+        webhook_url = dbutils.secrets.get(scope="customer_intelligence", key="slack_webhook_url")
+    except Exception:
+        print(f"ℹ️ Slack não configurado (secret 'customer_intelligence/slack_webhook_url' ausente). Alerta:\n   {message}")
+        return False
+
+    payload = json.dumps({"text": message}).encode("utf-8")
+    req = urllib.request.Request(webhook_url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+        print(f"✓ Alerta enviado ao Slack: {message[:80]}...")
+        return True
+    except Exception as e:
+        print(f"⚠️ Falha ao enviar alerta ao Slack: {e}\n   Mensagem: {message}")
+        return False
 
 print("✓ Configuração carregada")
 print(f"  Catalog: {CATALOG}")
@@ -107,8 +135,16 @@ print(f"Taxa de churn prevista:  {predicted_churn_rate:.2%}")
 print(f"Probabilidade média:     {avg_churn_probability:.2%}")
 print(f"Diferença:                {abs(actual_churn_rate - predicted_churn_rate):.2%}")
 
-if abs(actual_churn_rate - predicted_churn_rate) > 0.05:
-    print("\n⚠️ ALERTA: Diferença significativa detectada - considere retreinar o modelo")
+drift_gap = abs(actual_churn_rate - predicted_churn_rate)
+if drift_gap > 0.05:
+    alert_message = (
+        f"🚨 *Drift de churn detectado* — real {actual_churn_rate:.2%} vs. "
+        f"previsto {predicted_churn_rate:.2%} (diferença de {drift_gap:.2%}, "
+        f"acima do threshold de 5%). Considere retreinar o modelo "
+        f"(`04_models/Automated Model Retraining.py`)."
+    )
+    print(f"\n⚠️ ALERTA: {alert_message}")
+    send_slack_alert(alert_message)
 else:
     print("\n✓ Modelo alinhado com realidade")
 

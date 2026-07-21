@@ -336,11 +336,12 @@ print(f"   3️⃣ Reproduzir resultados com versões exatas")
 
 # DBTITLE 1,Setup e Instalação
 # Install Databricks Feature Engineering client
-print("🔧 Installing databricks-feature-engineering...")
-%pip install databricks-feature-engineering --quiet
+# MAGIC %pip install databricks-feature-engineering --quiet
+# MAGIC dbutils.library.restartPython()
 
-print("✅ Installation complete! Restarting Python...")
-dbutils.library.restartPython()
+# COMMAND ----------
+
+print("✅ Installation complete!")
 
 # COMMAND ----------
 

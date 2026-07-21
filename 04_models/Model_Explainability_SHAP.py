@@ -27,8 +27,10 @@
 
 # DBTITLE 1,Setup e Instalação
 # Instalar SHAP
-%pip install shap==0.44.0 --quiet
-dbutils.library.restartPython()
+# MAGIC %pip install shap==0.44.0 --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
 
 print("✓ SHAP instalado")
 
@@ -51,6 +53,7 @@ CATALOG = "customer_intelligence"
 SCHEMA_GOLD = "gold"
 
 def get_full_table_name(schema, table):
+    """Retorna nome completo da tabela"""
     return f"{CATALOG}.{schema}.{table}"
 
 print("✓ Setup completo")

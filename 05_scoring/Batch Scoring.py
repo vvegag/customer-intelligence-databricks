@@ -38,9 +38,11 @@ MLFLOW_EXPERIMENT_PATH = f"/Users/{CURRENT_USER}/customer_intelligence_experimen
 MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
 
 def get_full_table_name(schema, table):
+    """Retorna nome completo da tabela"""
     return f"{CATALOG}.{schema}.{table}"
 
 def create_or_replace_table(df, schema, table, partition_by=None):
+    """Salva DataFrame como tabela Delta"""
     full_name = get_full_table_name(schema, table)
     writer = df.write.format("delta").mode("overwrite")
     if partition_by:

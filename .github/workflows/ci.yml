@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  validate-bundle:
+    runs-on: ubuntu-latest
+    # Só roda em push para dev/master com credenciais configuradas nos Secrets do
+    # repositório (DATABRICKS_HOST / DATABRICKS_TOKEN). Se não estiverem
+    # configurados, o job falha rápido em vez de expor erro confuso de auth.
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Databricks credentials are configured
+        id: check_creds
+        run: |
+          if [ -z "${{ secrets.DATABRICKS_HOST }}" ] || [ -z "${{ secrets.DATABRICKS_TOKEN }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️ DATABRICKS_HOST/DATABRICKS_TOKEN não configurados nos Secrets do repo — pulando validação do bundle."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Databricks CLI
+        if: steps.check_creds.outputs.skip == 'false'
+        uses: databricks/setup-cli@main
+
+      - name: Validate bundle (dev target)
+        if: steps.check_creds.outputs.skip == 'false'
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate --target dev

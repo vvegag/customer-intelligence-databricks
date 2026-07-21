@@ -1,13 +1,23 @@
 # Customer Intelligence & Growth Project
 
-## 🎯 Objetivo
+## 🎯 Contexto e Objetivo
 
-Projeto completo de Customer Intelligence em Databricks focado em:
+Este projeto reconstrói, com dados sintéticos, o tipo de trabalho de Customer
+Intelligence que meu time fazia na CRMBonus: um time dividido por especialidade
+(um colega focado em propensão, outro em churn, eu concentrado em **segmentação
+e testes A/B/inferência causal**), colaborando de perto e com conhecimento real
+das bases — volume de linhas, características dos usuários, comportamento de
+uso do programa de cashback/fidelidade. Não há acesso a dados reais de nenhuma
+empresa aqui; a arquitetura e as decisões técnicas é que refletem esse contexto
+real, reconstruídas do zero para fechar o ciclo completo (algo que o dia a dia
+corrido raramente permite documentar).
+
+Cobre:
 - **Churn Prediction**: Identificar clientes com risco de cancelamento
 - **Propensity Modeling**: Prever probabilidade de compra/renovação
 - **Recommendation**: Sugerir próxima melhor ação
-- **Segmentation**: Agrupar clientes por comportamento (RFM)
-- **A/B Testing**: Medir efetividade de campanhas com grupos controle/tratamento
+- **Segmentation**: Agrupar clientes por comportamento (RFM) — minha frente principal na CRMBonus
+- **A/B Testing**: Medir efetividade de campanhas com grupos controle/tratamento — idem
 - **Causal Inference**: Entender impacto causal de ações de marketing
 
 ---
@@ -88,6 +98,32 @@ customer-intelligence-databricks/
 - **XGBoost**: Algoritmo de ML para churn
 - **Pandas/NumPy**: Manipulação de dados
 - **SciPy**: Testes estatísticos (t-test, chi-square)
+
+---
+
+## ✅ Testes e CI
+
+Testes locais (não precisam de cluster Databricks — rodam em segundos):
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+- **`test_notebook_syntax.py`**: garante que todo notebook `.py` é Python
+  sintaticamente válido (pega erro de `%pip install` sem o prefixo `# MAGIC`,
+  por exemplo — já pegou 2 bugs reais nesse projeto).
+- **`test_config_consistency.py`**: garante que as funções auxiliares
+  duplicadas entre notebooks (`get_full_table_name`, `create_or_replace_table`)
+  não divergiram silenciosamente.
+- **`test_databricks_yml.py`**: valida a estrutura do Asset Bundle sem precisar
+  de credenciais (indentação correta, `notebook_path` apontando pra arquivo que
+  existe, variáveis declaradas) — já pegou 2 bugs reais de configuração.
+
+GitHub Actions roda esses testes a cada push em `dev`/`master`
+(`.github/workflows/ci.yml`). Se os secrets `DATABRICKS_HOST`/`DATABRICKS_TOKEN`
+estiverem configurados no repositório, também valida o bundle contra um
+workspace real (`databricks bundle validate`).
 
 ---
 
