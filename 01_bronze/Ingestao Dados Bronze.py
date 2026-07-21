@@ -322,7 +322,13 @@ for i in range(N_EVENTS):
     })
 
 df_events = spark.createDataFrame(pd.DataFrame(event_data))
-create_or_replace_table(df_events, SCHEMA_BRONZE, "behavioral_events_raw", partition_by="event_date")
+# Sem partition_by: event_date tem granularidade de minuto, então seria uma
+# coluna de altíssima cardinalidade (quase 1 valor distinto por linha em 100k
+# linhas) — particionar por ela criaria dezenas de milhares de arquivos minúsculos
+# e travaria a escrita. Numa tabela desse tamanho (100k linhas), particionamento
+# nem compensa; se precisar no futuro, particionar por uma coluna derivada de
+# granularidade grosseira (ex: ano-mês), não pelo timestamp completo.
+create_or_replace_table(df_events, SCHEMA_BRONZE, "behavioral_events_raw")
 
 print(f"✓ Criados {N_EVENTS} eventos")
 df_events.show(5)
