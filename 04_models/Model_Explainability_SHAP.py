@@ -102,10 +102,11 @@ print(f"\nPrimeiras features: {feature_cols[:5]}")
 # COMMAND ----------
 
 # DBTITLE 1,SHAP: Feature Importance Global
-# Criar SHAP explainer
-# Usar uma amostra para velocidade (100 clientes de background)
-X_background = shap.sample(X_test, 100)
-explainer = shap.TreeExplainer(model, X_background)
+# Criar SHAP explainer. feature_perturbation="tree_path_dependent" evita o
+# NotImplementedError ("Categorical split") que o modo "interventional"
+# (default ao passar um dataset de background) lança para árvores do
+# XGBoost; nesse modo não é preciso (nem usado) um dataset de background.
+explainer = shap.TreeExplainer(model, feature_perturbation="tree_path_dependent")
 
 # Calcular SHAP values para amostra de teste
 X_explain = X_test.sample(min(500, len(X_test)), random_state=42)
