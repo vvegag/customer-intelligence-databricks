@@ -231,21 +231,22 @@ print("Force Plot - Top 20 clientes de maior risco\n")
 # Pegar top 20 de maior risco
 top_risk_indices = predictions.argsort()[-20:][::-1]
 
-shap.force_plot(
+# force_plot com matplotlib=True só suporta 1 amostra por vez; para várias
+# observações de uma vez o equivalente nativo do matplotlib é decision_plot.
+shap.decision_plot(
     explainer.expected_value[1] if isinstance(explainer.expected_value, list) else explainer.expected_value,
     shap_values_churn[top_risk_indices],
     X_explain.iloc[top_risk_indices],
-    matplotlib=True,
     show=False
 )
-plt.title("Force Plot - Top 20 Clientes de Maior Risco de Churn", fontsize=14, fontweight='bold')
+plt.title("Decision Plot - Top 20 Clientes de Maior Risco de Churn", fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.show()
 
 print("\n📊 Interpretação:")
-print("• Vermelho = features que AUMENTAM risco")
-print("• Azul = features que DIMINUEM risco")
-print("• Largura da barra = magnitude do impacto")
+print("• Cada linha = um cliente, do valor base até a predição final")
+print("• Linha pendendo para a direita = features empurrando o risco para cima")
+print("• Linha pendendo para a esquerda = features reduzindo o risco")
 
 # COMMAND ----------
 
