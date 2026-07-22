@@ -312,12 +312,19 @@ def retrain_model(model_name: str) -> str:
             mlflow.log_metric("accuracy", accuracy)
             mlflow.log_metric("auc_roc", auc)
             mlflow.log_metric("training_samples", len(X))
-            
+
+            # UC exige signature (input/output schema) em todo modelo registrado
+            from mlflow.models.signature import infer_signature
+            signature = infer_signature(X, y_pred_proba)
+            input_example = X.head(5)
+
             # Log model
             mlflow.xgboost.log_model(
                 model,
                 artifact_path="model",
-                registered_model_name=f"{MODEL_REGISTRY_PREFIX}.{model_name}"
+                registered_model_name=f"{MODEL_REGISTRY_PREFIX}.{model_name}",
+                signature=signature,
+                input_example=input_example
             )
             
             print(f"   ✅ Modelo retreinado: accuracy={accuracy:.4f}, AUC={auc:.4f}")
