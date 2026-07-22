@@ -28,6 +28,124 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Setup e Instalação
+# Install Databricks Feature Engineering client
+# MAGIC %pip install databricks-feature-engineering --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
+print("✅ Installation complete!")
+
+# COMMAND ----------
+
+# DBTITLE 1,Imports
+from databricks.feature_engineering import FeatureEngineeringClient, FeatureLookup
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+from datetime import datetime, timedelta
+import mlflow
+
+print("✅ Imports carregados com sucesso!")
+print(f"📅 Timestamp: {datetime.now()}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Initialize Feature Store Client
+# Initialize Feature Engineering Client
+fe = FeatureEngineeringClient()
+
+# Define catalog and schema
+catalog = "customer_intelligence"
+schema = "gold"
+
+print("✅ Feature Engineering Client inicializado!")
+print(f"📊 Catalog: {catalog}")
+print(f"📂 Schema: {schema}")
+print(f"🎯 Feature Store pronto para uso!")
+
+# COMMAND ----------
+
+# DBTITLE 1,Criar Customer Features (Offline Table)
+# Ler tabela de features existente
+source_table = f"{catalog}.{schema}.customer_features"
+
+print(f"📖 Lendo features de: {source_table}")
+customer_features_df = spark.table(source_table)
+
+# Adicionar timestamp para point-in-time correctness
+customer_features_df = customer_features_df.withColumn(
+    "update_timestamp",
+    current_timestamp()
+)
+
+# Selecionar features para Feature Store
+feature_columns = [
+    "customer_id",
+    "update_timestamp",
+    "recency_days",
+    "frequency",
+    "monetary_total",
+    "avg_transaction_value",
+    "clv_estimate",
+    "segment"
+]
+
+features_to_store = customer_features_df.select(feature_columns)
+
+print(f"\n✅ Features preparadas para Feature Store:")
+print(f"   📊 Total de customers: {features_to_store.count():,}")
+print(f"   📋 Features selecionadas: {len(feature_columns)-2}")  # -2 para excluir customer_id e timestamp
+print(f"\n📊 Schema:")
+features_to_store.printSchema()
+
+print(f"\n🔍 Sample de 5 registros:")
+display(features_to_store.limit(5))
+
+# COMMAND ----------
+
+# DBTITLE 1,Write Features to Feature Store
+# Nome da Feature Table
+feature_table_name = f"{catalog}.{schema}.customer_features_fs"
+
+print(f"📝 Criando/Atualizando Feature Table: {feature_table_name}")
+
+try:
+    # Criar Feature Table (ou sobrescrever se já existe)
+    fe.create_table(
+        name=feature_table_name,
+        primary_keys=["customer_id"],
+        timestamp_keys=["update_timestamp"],
+        df=features_to_store,
+        description="Customer features para modelos de churn, propensity e segmentation"
+    )
+    print(f"✅ Feature Table criada com sucesso!")
+except Exception as e:
+    if "already exists" in str(e).lower():
+        print(f"⚠️ Feature Table já existe. Atualizando com novos dados...")
+        # Write/Overwrite features
+        fe.write_table(
+            name=feature_table_name,
+            df=features_to_store,
+            mode="merge"  # ou "overwrite" para substituir tudo
+        )
+        print(f"✅ Features atualizadas com sucesso!")
+    else:
+        raise e
+
+print(f"\n🎯 Feature Store Status:")
+print(f"   ✅ Offline Table: {feature_table_name}")
+print(f"   📊 Features disponíveis para training")
+print(f"   🔍 Point-in-time correctness habilitado")
+
+# Verificar conteúdo
+print(f"\n📊 Conteúdo da Feature Table:")
+feature_table_df = spark.table(feature_table_name)
+print(f"   Total de registros: {feature_table_df.count():,}")
+display(feature_table_df.limit(10))
+
+# COMMAND ----------
+
 # DBTITLE 1,Point-in-Time Lookup (Training)
 # Simular labels para training (exemplo: churn prediction)
 print("🎯 Demonstrando Point-in-Time Correctness no Training")
@@ -60,7 +178,7 @@ training_set = fe.create_training_set(
             table_name=feature_table_name,
             lookup_key="customer_id",
             timestamp_lookup_key="event_timestamp",  # Point-in-time!
-            feature_names=["recency_days", "frequency", "monetary_total", 
+            feature_names=["recency_days", "frequency", "monetary_total",
                           "avg_transaction_value", "clv_estimate"]
         )
     ],
@@ -93,7 +211,7 @@ print(f"📊 Online Table: {online_table_name}")
 try:
     # Criar online table
     print(f"\n🔧 Criando Online Feature Table...")
-    
+
     online_table_spec = fe.publish_table(
         name=feature_table_name,
         online_store={
@@ -103,14 +221,14 @@ try:
             "table_name": "customer_features_online"
         }
     )
-    
+
     print(f"\n✅ Online Feature Store configurado!")
     print(f"\n💡 Benefícios:")
     print(f"   ⚡ Latência: <50ms (vs 500ms+ offline)")
     print(f"   🔄 Sync automático: offline → online")
     print(f"   🎯 Ideal para: Model Serving real-time")
     print(f"   📊 Escala: Milhões de requests/segundo")
-    
+
 except Exception as e:
     print(f"\n⚠️ Nota: Online Feature Store requer configuração adicional")
     print(f"   Erro: {str(e)[:200]}")
@@ -118,7 +236,7 @@ except Exception as e:
     print(f"   1. Databricks SQL Warehouse")
     print(f"   2. Online Store endpoint")
     print(f"   3. Sync schedule (ex: a cada 5 minutos)")
-    
+
 print(f"\n📚 Documentação: https://docs.databricks.com/machine-learning/feature-store/online-tables.html")
 
 # COMMAND ----------
@@ -140,7 +258,7 @@ def calculate_days_since_last_purchase(last_purchase_date):
     """
     if last_purchase_date is None:
         return 9999  # Cliente nunca comprou
-    
+
     # Calcular diferença de dias
     from datetime import datetime
     today = datetime.now()
@@ -198,20 +316,20 @@ training_pd = training_df.toPandas()
 
 if len(training_pd) > 0:
     # Preparar X, y
-    feature_cols = ["recency_days", "frequency", "monetary_total", 
+    feature_cols = ["recency_days", "frequency", "monetary_total",
                    "avg_transaction_value", "clv_estimate"]
     X = training_pd[feature_cols].fillna(0)
     y = training_pd["is_churned"]
-    
+
     # Train modelo
     model = RandomForestClassifier(n_estimators=10, max_depth=3, random_state=42)
     model.fit(X, y)
-    
+
     print(f"\n✅ Modelo treinado!")
-    
+
     # Log model com Feature Store
     with mlflow.start_run(run_name="churn_with_feature_store") as run:
-        
+
         # Log model usando Feature Engineering Client (automático lineage!)
         fe.log_model(
             model=model,
@@ -220,7 +338,7 @@ if len(training_pd) > 0:
             training_set=training_set,  # Aqui está o lineage!
             registered_model_name=f"{catalog}.{schema}.churn_model_fs"
         )
-        
+
         print(f"\n✅ Modelo logado com Feature Lineage!")
         print(f"   🎯 MLflow Run ID: {run.info.run_id}")
         print(f"   🔗 Feature Lineage: automático via training_set")
@@ -331,121 +449,3 @@ print(f"   3️⃣ Reproduzir resultados com versões exatas")
 # MAGIC ---
 # MAGIC
 # MAGIC **🎯 Projeto Customer Intelligence - Feature Store COMPLETO!**
-
-# COMMAND ----------
-
-# DBTITLE 1,Setup e Instalação
-# Install Databricks Feature Engineering client
-# MAGIC %pip install databricks-feature-engineering --quiet
-# MAGIC dbutils.library.restartPython()
-
-# COMMAND ----------
-
-print("✅ Installation complete!")
-
-# COMMAND ----------
-
-# DBTITLE 1,Imports
-from databricks.feature_engineering import FeatureEngineeringClient, FeatureLookup
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
-from datetime import datetime, timedelta
-import mlflow
-
-print("✅ Imports carregados com sucesso!")
-print(f"📅 Timestamp: {datetime.now()}")
-
-# COMMAND ----------
-
-# DBTITLE 1,Initialize Feature Store Client
-# Initialize Feature Engineering Client
-fe = FeatureEngineeringClient()
-
-# Define catalog and schema
-catalog = "customer_intelligence"
-schema = "gold"
-
-print("✅ Feature Engineering Client inicializado!")
-print(f"📊 Catalog: {catalog}")
-print(f"📂 Schema: {schema}")
-print(f"🎯 Feature Store pronto para uso!")
-
-# COMMAND ----------
-
-# DBTITLE 1,Criar Customer Features (Offline Table)
-# Ler tabela de features existente
-source_table = f"{catalog}.{schema}.customer_features"
-
-print(f"📖 Lendo features de: {source_table}")
-customer_features_df = spark.table(source_table)
-
-# Adicionar timestamp para point-in-time correctness
-customer_features_df = customer_features_df.withColumn(
-    "update_timestamp", 
-    current_timestamp()
-)
-
-# Selecionar features para Feature Store
-feature_columns = [
-    "customer_id",
-    "update_timestamp",
-    "recency_days",
-    "frequency",
-    "monetary_total",
-    "avg_transaction_value",
-    "clv_estimate",
-    "segment"
-]
-
-features_to_store = customer_features_df.select(feature_columns)
-
-print(f"\n✅ Features preparadas para Feature Store:")
-print(f"   📊 Total de customers: {features_to_store.count():,}")
-print(f"   📋 Features selecionadas: {len(feature_columns)-2}")  # -2 para excluir customer_id e timestamp
-print(f"\n📊 Schema:")
-features_to_store.printSchema()
-
-print(f"\n🔍 Sample de 5 registros:")
-display(features_to_store.limit(5))
-
-# COMMAND ----------
-
-# DBTITLE 1,Write Features to Feature Store
-# Nome da Feature Table
-feature_table_name = f"{catalog}.{schema}.customer_features_fs"
-
-print(f"📝 Criando/Atualizando Feature Table: {feature_table_name}")
-
-try:
-    # Criar Feature Table (ou sobrescrever se já existe)
-    fe.create_table(
-        name=feature_table_name,
-        primary_keys=["customer_id"],
-        timestamp_keys=["update_timestamp"],
-        df=features_to_store,
-        description="Customer features para modelos de churn, propensity e segmentation"
-    )
-    print(f"✅ Feature Table criada com sucesso!")
-except Exception as e:
-    if "already exists" in str(e).lower():
-        print(f"⚠️ Feature Table já existe. Atualizando com novos dados...")
-        # Write/Overwrite features
-        fe.write_table(
-            name=feature_table_name,
-            df=features_to_store,
-            mode="merge"  # ou "overwrite" para substituir tudo
-        )
-        print(f"✅ Features atualizadas com sucesso!")
-    else:
-        raise e
-
-print(f"\n🎯 Feature Store Status:")
-print(f"   ✅ Offline Table: {feature_table_name}")
-print(f"   📊 Features disponíveis para training")
-print(f"   🔍 Point-in-time correctness habilitado")
-
-# Verificar conteúdo
-print(f"\n📊 Conteúdo da Feature Table:")
-feature_table_df = spark.table(feature_table_name)
-print(f"   Total de registros: {feature_table_df.count():,}")
-display(feature_table_df.limit(10))
