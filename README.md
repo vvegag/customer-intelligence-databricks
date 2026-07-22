@@ -69,6 +69,8 @@ customer-intelligence-databricks/
 │   └── SQL Queries para Dashboards.ipynb      # Queries prontas para BI
 ├── 09_integrations/
 │   └── CRM Integration.py                     # Integração com CRM (Salesforce/HubSpot)
+├── 10_governance/
+│   └── Governanca de Dados.py                 # COMMENT ON, tags PII, masking/row filter, GRANT
 ├── production/                                # Notebooks "avançados", fora do fluxo principal
 │   ├── cicd/DABs_CI_CD_Complete.py            # Infra as Code + CI/CD (Databricks Asset Bundles)
 │   ├── feature_store/feature_store_complete.py

@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Todos os notebooks .py no fluxo principal + production/, exceto os que não usam
 # o padrão de tabela (ex: notebooks só de integração externa sem Unity Catalog)
-NOTEBOOK_GLOBS = ["0*/*.py", "production/*/*.py"]
+NOTEBOOK_GLOBS = ["[0-9]*/*.py", "production/*/*.py"]
 
 
 def _all_notebooks():

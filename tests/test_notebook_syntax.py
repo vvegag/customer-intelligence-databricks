@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def _all_py_notebooks():
     files = []
-    for pattern in ["0*/*.py", "production/*/*.py"]:
+    for pattern in ["[0-9]*/*.py", "production/*/*.py"]:
         files.extend(sorted(REPO_ROOT.glob(pattern)))
     return files
 
