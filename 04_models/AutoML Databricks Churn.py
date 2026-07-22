@@ -111,35 +111,28 @@ for _, row in target_distribution.iterrows():
 # COMMAND ----------
 
 # DBTITLE 1,Executar AutoML
-# Executar AutoML via UI: 
-# No Databricks, use o menu "Machine Learning" > "AutoML" para iniciar experimentos.
-# Alternativamente, use o notebook gerado automaticamente pelo AutoML.
-
-print("❌ AutoML não disponível via API nesta versão do Databricks Runtime.")
-print("➡️ Execute AutoML pelo menu: Machine Learning > AutoML > Create Experiment")
-print("➡️ Ou utilize o notebook gerado automaticamente pelo AutoML para análise dos resultados.")
+# Tenta a API do databricks.automl; em runtimes/planos que não a expõem
+# (ex: serverless, Free Edition), cai no fallback orientando a usar a UI.
+try:
+    import databricks.automl
 
 
+    summary = databricks.automl.classify(
+        dataset=df_automl_final,
+        target_col="will_churn",
+        primary_metric="roc_auc",
+        timeout_minutes=10,
+        max_trials=10
+    )
 
-
-
-### Forma alternativa não rodar este notebook 
-
-
-import databricks.automl
-
-# Executar AutoML para classificação
-summary = databricks.automl.classify(
-    dataset=df_automl_final,
-    target_col="will_churn",
-    primary_metric="roc_auc",
-    timeout_minutes=10,
-    max_trials=10
-)
-
-print("\n✓ AutoML concluído!")
-print(f"  Melhor modelo: {summary.best_trial.model_description}")
-print(f"  Melhor AUC: {summary.best_trial.metrics['val_roc_auc_score']:.4f}")
+    print("\n✓ AutoML concluído!")
+    print(f"  Melhor modelo: {summary.best_trial.model_description}")
+    print(f"  Melhor AUC: {summary.best_trial.metrics['val_roc_auc_score']:.4f}")
+except Exception as e:
+    summary = None
+    print(f"❌ AutoML não disponível via API neste ambiente ({type(e).__name__}: {e})")
+    print("➡️ Execute AutoML pelo menu: Machine Learning > AutoML > Create Experiment")
+    print("➡️ Ou utilize o notebook gerado automaticamente pelo AutoML para análise dos resultados.")
 
 # COMMAND ----------
 
@@ -152,35 +145,42 @@ manual_metrics = {
     "F1-Score": 0.88
 }
 
-# Métricas do AutoML
-automl_metrics = {
-    "AUC": summary.best_trial.metrics.get('val_roc_auc_score', 0),
-    "Precision": summary.best_trial.metrics.get('val_precision_score', 0),
-    "Recall": summary.best_trial.metrics.get('val_recall_score', 0),
-    "F1-Score": summary.best_trial.metrics.get('val_f1_score', 0)
-}
-
-# Tabela comparativa
 import pandas as pd
-comparison_df = pd.DataFrame({
-    "Métrica": list(manual_metrics.keys()),
-    "Modelo Manual (XGBoost)": list(manual_metrics.values()),
-    "AutoML": list(automl_metrics.values())
-})
 
-comparison_df['Diferença'] = comparison_df['AutoML'] - comparison_df['Modelo Manual (XGBoost)']
-
-print("\n=" * 70)
-print("COMPARAÇÃO: MODELO MANUAL vs AUTOML")
-print("=" * 70)
-print(comparison_df.to_string(index=False))
-print("\n")
-
-# Vencedor
-if automl_metrics['AUC'] > manual_metrics['AUC']:
-    print("✅ AutoML superou o modelo manual!")
+if summary is None:
+    print("⚠️ AutoML não rodou neste ambiente — sem resultados para comparar.")
+    print("\nMétricas do modelo manual (XGBoost):")
+    for metric, value in manual_metrics.items():
+        print(f"   - {metric}: {value}")
 else:
-    print("✅ Modelo manual ainda é superior (controle fino compensa)")
+    # Métricas do AutoML
+    automl_metrics = {
+        "AUC": summary.best_trial.metrics.get('val_roc_auc_score', 0),
+        "Precision": summary.best_trial.metrics.get('val_precision_score', 0),
+        "Recall": summary.best_trial.metrics.get('val_recall_score', 0),
+        "F1-Score": summary.best_trial.metrics.get('val_f1_score', 0)
+    }
+
+    # Tabela comparativa
+    comparison_df = pd.DataFrame({
+        "Métrica": list(manual_metrics.keys()),
+        "Modelo Manual (XGBoost)": list(manual_metrics.values()),
+        "AutoML": list(automl_metrics.values())
+    })
+
+    comparison_df['Diferença'] = comparison_df['AutoML'] - comparison_df['Modelo Manual (XGBoost)']
+
+    print("\n=" * 70)
+    print("COMPARAÇÃO: MODELO MANUAL vs AUTOML")
+    print("=" * 70)
+    print(comparison_df.to_string(index=False))
+    print("\n")
+
+    # Vencedor
+    if automl_metrics['AUC'] > manual_metrics['AUC']:
+        print("✅ AutoML superou o modelo manual!")
+    else:
+        print("✅ Modelo manual ainda é superior (controle fino compensa)")
 
 # COMMAND ----------
 
