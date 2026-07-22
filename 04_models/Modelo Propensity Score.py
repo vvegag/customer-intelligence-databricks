@@ -38,7 +38,6 @@ SCHEMA_SILVER = "silver"
 SCHEMA_GOLD = "gold"
 CURRENT_USER = spark.sql("SELECT current_user()").collect()[0][0]
 MLFLOW_EXPERIMENT_PATH = f"/Users/{CURRENT_USER}/customer_intelligence_experiments"
-MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
 
 # Helper functions
 def get_full_table_name(schema, table):
@@ -130,6 +129,12 @@ print(f"✓ Train: {X_train.shape}, Test: {X_test.shape}")
 
 mlflow.set_experiment(MLFLOW_EXPERIMENT_PATH)
 
+# Registrar no Unity Catalog Model Registry (nome de 3 níveis catalog.schema.model),
+# não no registry legado "achatado" — mesmo fix aplicado em Modelo Churn Prediction.py.
+# Usa alias Champion/Challenger em vez de número de versão fixo.
+mlflow.set_registry_uri("databricks-uc")
+model_name = f"{CATALOG}.{SCHEMA_GOLD}.propensity_model"
+
 with mlflow.start_run(run_name="propensity_xgboost_v1") as run:
     # XGBClassifier = Classificação Binária (não XGBRegressor)
     model = XGBClassifier(
@@ -139,33 +144,45 @@ with mlflow.start_run(run_name="propensity_xgboost_v1") as run:
         random_state=42        # Semente para reprodução dos resultados
     )
     model.fit(X_train, y_train)
-    
+
     y_pred_proba = model.predict_proba(X_test)[:, 1]
     y_pred = model.predict(X_test)
-    
+
     metrics = {
         "auc_roc": roc_auc_score(y_test, y_pred_proba),
         "precision": precision_score(y_test, y_pred),
         "recall": recall_score(y_test, y_pred),
         "f1": f1_score(y_test, y_pred)
     }
-    
+
     mlflow.log_params({"n_estimators": 100, "max_depth": 6})
     mlflow.log_metrics(metrics)
-    
+
     # Criar signature e input_example para Unity Catalog
     from mlflow.models.signature import infer_signature
     signature = infer_signature(X_train, y_pred_proba)
     input_example = X_train.head(5)
-    
-    mlflow.sklearn.log_model(
-        model, 
-        "model", 
-        registered_model_name=f"{MODEL_REGISTRY_NAME_PREFIX}_propensity",
+
+    model_info = mlflow.sklearn.log_model(
+        model,
+        "model",
         signature=signature,
-        input_example=input_example
+        input_example=input_example,
+        registered_model_name=model_name
     )
-    
+
+from mlflow.tracking import MlflowClient
+client = MlflowClient()
+try:
+    current_champion = client.get_model_version_by_alias(model_name, "champion")
+    client.set_registered_model_alias(model_name, "challenger", current_champion.version)
+    print(f"✓ Champion anterior (v{current_champion.version}) rebaixado para challenger")
+except Exception:
+    print("ℹ️ Primeira execução — ainda não existia um champion registrado")
+
+client.set_registered_model_alias(model_name, "champion", model_info.registered_model_version)
+print(f"✓ Modelo registrado: {model_name}@champion (v{model_info.registered_model_version})")
+
 print("\n✓ Modelo treinado")
 for k, v in metrics.items():
     print(f"  {k}: {v:.4f}")
