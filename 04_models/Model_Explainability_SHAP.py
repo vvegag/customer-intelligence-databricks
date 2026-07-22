@@ -20,7 +20,9 @@
 # DBTITLE 1,Setup e Instalação
 # shap==0.44.0 usa np.obj2sctype, removido no NumPy 2.0 (o Batch Scoring já
 # deixou o ambiente com numpy>=2 via --upgrade); shap>=0.45 corrige isso.
-# MAGIC %pip install "shap>=0.45.0" --quiet
+# xgboost é necessário para desserializar o modelo (XGBClassifier salvo sob
+# o flavor "sklearn" do MLflow, mas ainda precisa do pacote pra unpickle).
+# MAGIC %pip install "shap>=0.45.0" xgboost --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
