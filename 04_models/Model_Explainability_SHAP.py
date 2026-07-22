@@ -18,8 +18,9 @@
 # COMMAND ----------
 
 # DBTITLE 1,Setup e Instalação
-# Instalar SHAP
-# MAGIC %pip install shap==0.44.0 --quiet
+# shap==0.44.0 usa np.obj2sctype, removido no NumPy 2.0 (o Batch Scoring já
+# deixou o ambiente com numpy>=2 via --upgrade); shap>=0.45 corrige isso.
+# MAGIC %pip install "shap>=0.45.0" --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
