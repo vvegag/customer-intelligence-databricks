@@ -27,12 +27,19 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Instalar Dependências
+# MAGIC %pip install xgboost --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # DBTITLE 1,1. Setup e Imports
 # Databricks notebook source
 import pyspark.sql.functions as F
 from pyspark.sql.types import *
 from datetime import datetime, timedelta
 import mlflow
+import mlflow.xgboost
 from mlflow.tracking import MlflowClient
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score
@@ -141,15 +148,13 @@ def get_current_model_performance(model_name: str) -> dict:
         
         # Get latest predictions from production
         if model_name == "churn_model":
-            preds_df = spark.table(f"{CATALOG}.gold.churn_predictions")
-            actuals_df = spark.table(f"{CATALOG}.gold.churn_labels")
-            
-            # Join predictions with actuals (simulated for demo)
-            eval_df = preds_df.join(actuals_df, "customer_id", "inner").toPandas()
-            
-            y_true = eval_df['is_churned']
-            y_pred = (eval_df['churn_probability'] >= 0.5).astype(int)
-            
+            # churn_predictions já grava actual_churn/predicted_churn (ver Modelo
+            # Churn Prediction.py) — não precisa juntar com churn_labels de novo.
+            eval_df = spark.table(f"{CATALOG}.gold.churn_predictions").toPandas()
+
+            y_true = eval_df['actual_churn']
+            y_pred = eval_df['predicted_churn']
+
             metrics = {
                 'accuracy': float(accuracy_score(y_true, y_pred)),
                 'auc_roc': float(roc_auc_score(y_true, eval_df['churn_probability'])),
@@ -224,18 +229,31 @@ def retrain_model(model_name: str) -> str:
         if model_name == "churn_model":
             # Load training data
             train_df = spark.table(f"{CATALOG}.gold.customer_features").toPandas()
-            labels_df = spark.table(f"{CATALOG}.gold.churn_labels").toPandas()
-            
+            # Só customer_id + churn_label: churn_labels também tem recency_days/
+            # frequency, que colidiriam com as mesmas colunas de train_df no merge.
+            labels_df = spark.table(f"{CATALOG}.gold.churn_labels").select("customer_id", "churn_label").toPandas()
+
             # Merge features + labels
             df = train_df.merge(labels_df, on='customer_id')
-            
-            # Features
-            feature_cols = ['recency_days', 'frequency', 'monetary_total', 'monetary_avg', 
-                          'avg_days_between_purchases', 'product_diversity', 'last_purchase_amount',
-                          'has_email', 'has_phone']
-            
+
+            # Mesma lista de features de Modelo Churn Prediction.py — o modelo
+            # retreinado tem que ter a mesma assinatura de quem já está em produção.
+            feature_cols = [
+                "age", "customer_age_days",
+                "recency_days", "frequency", "monetary_total", "monetary_avg",
+                "customer_lifetime_days", "purchase_frequency_per_day",
+                "unique_products_purchased", "total_items_purchased",
+                "event_count_30d", "session_count_30d", "engagement_score_30d",
+                "page_views_30d", "product_views_30d", "add_to_cart_30d",
+                "event_count_60d", "session_count_60d", "engagement_score_60d",
+                "event_count_90d", "session_count_90d", "engagement_score_90d",
+                "total_campaigns_exposed", "treatment_campaigns_count",
+                "total_responses", "total_conversions",
+                "response_rate", "conversion_rate"
+            ]
+
             X = df[feature_cols].fillna(0)
-            y = df['is_churned']
+            y = df['churn_label']
             
             # Train XGBoost
             from xgboost import XGBClassifier
@@ -298,9 +316,10 @@ def compare_models(model_name: str, new_run_id: str) -> dict:
     print(f"\n🔬 Comparando modelos: {model_name}")
     
     try:
-        # Get champion model metrics
-        champion_uri = f"models:/{MODEL_REGISTRY_PREFIX}.{model_name}@champion"
-        champion_run = mlflow.get_run(mlflow.search_model_versions(f"name='{MODEL_REGISTRY_PREFIX}.{model_name}'")[0].run_id)
+        # Get champion model metrics via alias (não por índice de search_model_versions,
+        # que não garante retornar a versão com o alias @champion)
+        champion_version = client.get_model_version_by_alias(f"{MODEL_REGISTRY_PREFIX}.{model_name}", "champion")
+        champion_run = mlflow.get_run(champion_version.run_id)
         champion_metrics = champion_run.data.metrics
         
         # Get new model metrics
