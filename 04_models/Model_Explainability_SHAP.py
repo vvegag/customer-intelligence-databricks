@@ -55,19 +55,16 @@ print(f"SHAP version: {shap.__version__}")
 # COMMAND ----------
 
 # DBTITLE 1,Carregar Modelo de Churn
-# Carregar modelo registrado do MLflow
-model_name = "customer_intelligence.gold.churn_model"
+# Carregar modelo do Unity Catalog Model Registry pelo alias @champion.
+# Nota: "models:/nome/latest" NÃO é suportado para modelos no UC (usa
+# get_latest_versions internamente, proibido no UC) — por isso carregamos
+# direto por alias, sem fallback para essa sintaxe legada.
+mlflow.set_registry_uri("databricks-uc")
 
-try:
-    # Tentar carregar da produção
-    model_uri = f"models:/{model_name}@champion"
-    model = mlflow.sklearn.load_model(model_uri)
-    print(f"✓ Modelo carregado: {model_name}@champion")
-except:
-    # Fallback: carregar última versão
-    model_uri = f"models:/{model_name}/latest"
-    model = mlflow.sklearn.load_model(model_uri)
-    print(f"✓ Modelo carregado: {model_name}/latest")
+model_name = "customer_intelligence.gold.churn_model"
+model_uri = f"models:/{model_name}@champion"
+model = mlflow.sklearn.load_model(model_uri)
+print(f"✓ Modelo carregado: {model_name}@champion")
 
 print(f"Tipo de modelo: {type(model).__name__}")
 
