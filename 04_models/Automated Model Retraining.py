@@ -55,7 +55,7 @@ SCHEMA = "gold"
 MODEL_REGISTRY_PREFIX = f"{CATALOG}.{SCHEMA}"
 
 # Retraining thresholds
-DRIFT_THRESHOLD = 0.15  # 15% drift triggers retraining
+DRIFT_THRESHOLD = 0.15  # desvio da média atual, em unidades de stddev do baseline, que aciona retraining
 PERFORMANCE_THRESHOLD = 0.02  # +2% accuracy required for promotion
 MIN_SAMPLES_REQUIRED = 1000  # Minimum samples for retraining
 
@@ -99,34 +99,67 @@ def calculate_psi(expected, actual, buckets=10):
 
 def detect_drift(model_name: str) -> dict:
     """
-    Detecta drift comparando features training vs production
+    Detecta drift comparando o snapshot mais antigo (baseline) com o mais
+    recente (atual) na tabela feature_drift_monitoring.
+
+    Nota: essa tabela guarda estatísticas agregadas por snapshot (mean,
+    stddev, percentis — ver 07_monitoring/Monitoramento Performance.py), não
+    os valores brutos por cliente. Por isso não dá pra calcular PSI de
+    verdade (calculate_psi() precisa das duas distribuições completas); em
+    vez disso, usamos o desvio da média atual em unidades de stddev do
+    baseline como proxy leve de drift (quanto maior, mais a distribuição
+    "andou" desde o baseline).
     Returns: dict com drift score e features com maior drift
     """
     print(f"\n🔍 Detectando drift para modelo: {model_name}")
-    
-    # Load feature drift monitoring table
-    drift_df = spark.table(f"{CATALOG}.gold.feature_drift_monitoring").toPandas()
-    
-    # Calcular drift médio (PSI)
-    avg_drift = drift_df['psi_score'].mean()
-    max_drift = drift_df['psi_score'].max()
-    
-    # Features com maior drift
-    top_drift_features = drift_df.nlargest(5, 'psi_score')[['feature_name', 'psi_score']].to_dict('records')
-    
+
+    drift_history = spark.table(f"{CATALOG}.gold.feature_drift_monitoring").toPandas()
+
+    if drift_history['snapshot_date'].nunique() < 2:
+        print("   ℹ️ Apenas 1 snapshot de monitoramento disponível — sem histórico "
+              "suficiente para medir drift ainda (rode o Monitoramento novamente "
+              "em outro momento para acumular histórico).")
+        return {
+            'model_name': model_name,
+            'avg_psi': 0.0,
+            'max_psi': 0.0,
+            'drift_detected': False,
+            'top_drift_features': [],
+            'timestamp': datetime.now().isoformat()
+        }
+
+    drift_history = drift_history.sort_values('snapshot_date')
+    baseline = drift_history.groupby('feature_name').first()
+    current = drift_history.groupby('feature_name').last()
+
+    drift_scores = (
+        (current['mean'] - baseline['mean']).abs() / baseline['stddev'].replace(0, np.nan)
+    ).fillna(0)
+
+    avg_drift = float(drift_scores.mean())
+    max_drift = float(drift_scores.max())
+
+    top_drift_features = (
+        drift_scores.sort_values(ascending=False)
+        .head(5)
+        .reset_index()
+        .rename(columns={0: 'drift_score'})
+        .to_dict('records')
+    )
+
     drift_status = {
         'model_name': model_name,
-        'avg_psi': float(avg_drift),
-        'max_psi': float(max_drift),
+        'avg_psi': avg_drift,
+        'max_psi': max_drift,
         'drift_detected': max_drift >= DRIFT_THRESHOLD,
         'top_drift_features': top_drift_features,
         'timestamp': datetime.now().isoformat()
     }
-    
-    print(f"   Average PSI: {avg_drift:.4f}")
-    print(f"   Max PSI: {max_drift:.4f}")
+
+    print(f"   Average drift score: {avg_drift:.4f}")
+    print(f"   Max drift score: {max_drift:.4f}")
     print(f"   Drift Detected: {drift_status['drift_detected']}")
-    
+
     return drift_status
 
 print("✅ Drift detection engine ready")
