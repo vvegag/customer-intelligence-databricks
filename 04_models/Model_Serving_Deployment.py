@@ -20,15 +20,6 @@
 # MAGIC     ↓ (retorna)
 # MAGIC Predições JSON
 # MAGIC ```
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ## Diferencial para a Vaga
-# MAGIC ✅ **MLOps**: Modelos em produção, não apenas notebooks
-# MAGIC ✅ **Escalabilidade**: Endpoints servem milhares de requisições/min
-# MAGIC ✅ **API-first**: Integração com sistemas externos
-# MAGIC ✅ **Monitoring**: Latency, throughput, drift detection
-
 # COMMAND ----------
 
 # DBTITLE 1,Setup e Configuração

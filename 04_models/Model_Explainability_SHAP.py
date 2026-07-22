@@ -15,14 +15,6 @@
 # MAGIC ### Modelos Analisados
 # MAGIC 1. **Churn Prediction** - Por que clientes estão em risco?
 # MAGIC 2. **Propensity Score** - O que influencia probabilidade de compra?
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ## Diferencial para a Vaga
-# MAGIC ✅ **Senior Data Scientist**: Não apenas treina modelos, mas explica decisões
-# MAGIC ✅ **Comunicação**: Traduz ML para linguagem de negócio
-# MAGIC ✅ **Governança**: Demonstra que modelos são auditáveis e justos
-
 # COMMAND ----------
 
 # DBTITLE 1,Setup e Instalação

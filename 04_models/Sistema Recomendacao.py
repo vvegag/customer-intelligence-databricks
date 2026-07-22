@@ -24,14 +24,6 @@
 # MAGIC * Produtos similares aos já comprados
 # MAGIC * Baseado em co-ocorrência (quem comprou X também comprou Y)
 # MAGIC * Top-N produtos recomendados
-# MAGIC
-# MAGIC ---
-# MAGIC
-# MAGIC ## Diferencial para a Vaga
-# MAGIC ✅ **Requisito citado:** "Atuação em projetos de recomendação"
-# MAGIC ✅ **Demonstra:** Múltiplas abordagens de recomendação
-# MAGIC ✅ **Mostra:** Deploy de sistema de scoring em produção
-
 # COMMAND ----------
 
 # DBTITLE 1,Setup e Configuração
