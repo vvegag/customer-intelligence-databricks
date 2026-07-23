@@ -56,6 +56,7 @@ customer-intelligence-databricks/
 │   ├── Segmentacao Clientes Clustering.py     # K-Means (5 segmentos)
 │   ├── Sistema Recomendacao.py                # Next best action (híbrido + cold-start)
 │   ├── Ativacao Saldo Dormente.py             # Priorização por valor em risco não resgatado
+│   ├── Forecast GMV e Resgates.py             # Prophet: forecast semanal de resgate
 │   ├── AutoML Databricks Churn.py             # Comparação com Databricks AutoML
 │   ├── Automated Model Retraining.py          # Pipeline de retreino automático
 │   ├── Model_Explainability_SHAP.py           # Explicabilidade (waterfall/dependence/force plot)
