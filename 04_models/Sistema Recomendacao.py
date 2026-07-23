@@ -110,16 +110,59 @@ df_products_scored.orderBy(F.desc("conversion_rate")).limit(10).display()
 
 # COMMAND ----------
 
-# DBTITLE 1,1️⃣ Next Best Product - Recomendações Personalizadas
-# Para cada cliente, recomendar TOP 5 produtos que ele NUNCA comprou
+# DBTITLE 1,1️⃣ Next Best Product - Recomendações Personalizadas (híbrido com cold-start)
+# Para cada cliente, recomendar TOP 5 produtos que ele NUNCA comprou.
+#
+# Score híbrido de verdade (o comentário da célula anterior já prometia isso,
+# mas antes só rankeava por popularidade pura):
+#   score = conversion_rate (popularidade global — funciona pra todo mundo)
+#         + 0.5 se a categoria do produto já foi comprada pelo cliente (content-based)
+#         + até 0.3 por proximidade de preço com o ticket médio do cliente
+#
+# Cliente sem nenhuma transação (cold-start) não casa em nenhuma categoria/preço
+# médio, então o score colapsa exatamente para popularidade pura — fallback
+# automático, sem precisar de lógica condicional separada. Isso é o "modelo
+# híbrido content-based + collaborative com fallback de cold-start" que
+# marketplaces com alta rotatividade de participantes novos (tipo o caso da
+# Vertem) precisam.
 df_customers = spark.table(get_full_table_name(SCHEMA_BRONZE, "customers_raw"))
 
 # Cross join clientes x produtos
 df_recommendations = df_customers.select("customer_id").crossJoin(
     df_products_scored.select(
-        "product_id", "product_name", "category", 
+        "product_id", "product_name", "category",
         "price", "conversion_rate", "purchase_count"
     )
+)
+
+# Trazer o perfil do cliente (categorias já compradas + ticket médio) — null
+# para quem nunca comprou nada, que é justamente o caso cold-start.
+df_recommendations = df_recommendations.join(
+    df_customer_history.select("customer_id", "purchased_categories", "avg_purchase_amount"),
+    "customer_id",
+    "left"
+)
+
+df_recommendations = df_recommendations.withColumn(
+    "is_cold_start", F.col("purchased_categories").isNull()
+).withColumn(
+    "category_affinity",
+    F.when(
+        F.col("purchased_categories").isNotNull() & F.array_contains(F.col("purchased_categories"), F.col("category")),
+        0.5
+    ).otherwise(0.0)
+).withColumn(
+    "price_affinity",
+    F.when(
+        F.col("avg_purchase_amount").isNotNull(),
+        F.greatest(F.lit(0.0), F.lit(0.3) - (F.abs(F.col("price") - F.col("avg_purchase_amount")) / F.col("avg_purchase_amount")) * F.lit(0.3))
+    ).otherwise(F.lit(0.0))
+).withColumn(
+    "recommendation_score",
+    F.col("conversion_rate") + F.col("category_affinity") + F.col("price_affinity")
+).withColumn(
+    "score_basis",
+    F.when(F.col("is_cold_start"), "cold_start_popularity").otherwise("hybrid_personalized")
 )
 
 # Remover produtos já comprados
@@ -137,16 +180,23 @@ df_recommendations = df_recommendations.join(
     "left_anti"
 )
 
-# Ranking: Top 5 por cliente
-window_spec = Window.partitionBy("customer_id").orderBy(F.desc("conversion_rate"))
+# Ranking: Top 5 por cliente, agora pelo score híbrido
+window_spec = Window.partitionBy("customer_id").orderBy(F.desc("recommendation_score"))
 df_top_recommendations = df_recommendations.withColumn(
     "rank",
     F.row_number().over(window_spec)
 ).filter(F.col("rank") <= 5)
 
+n_cold_start = df_customers.select("customer_id").exceptAll(
+    df_customer_history.select("customer_id")
+).count()
+n_total = df_customers.count()
 print(f"✓ Recomendações geradas: {df_top_recommendations.count():,} recomendações")
-print(f"  Top 5 produtos por cliente")
-df_top_recommendations.filter(F.col("customer_id") == "C001").display()
+print(f"  Top 5 produtos por cliente (score híbrido: popularidade + categoria + preço)")
+print(f"  Clientes cold-start (sem histórico de compra): {n_cold_start:,} de {n_total:,} ({n_cold_start/n_total:.1%})")
+df_top_recommendations.filter(F.col("customer_id") == "C001").select(
+    "customer_id", "product_name", "category", "recommendation_score", "score_basis", "rank"
+).display()
 
 # COMMAND ----------
 
@@ -303,8 +353,9 @@ df_nbp = df_top_recommendations.select(
     "customer_id",
     F.col("product_id").alias("recommended_product_id"),
     F.lit("next_best_product").alias("recommendation_type"),
-    F.col("conversion_rate").alias("score"),
-    F.col("rank")
+    F.col("recommendation_score").alias("score"),
+    F.col("rank"),
+    F.col("score_basis")
 )
 
 # 2. Next Best Action
@@ -313,7 +364,8 @@ df_nba = df_actions.select(
     F.lit(None).cast("string").alias("recommended_product_id"),
     F.lit("next_best_action").alias("recommendation_type"),
     F.col("action_priority").cast("double").alias("score"),
-    F.lit(1).alias("rank")
+    F.lit(1).alias("rank"),
+    F.lit(None).cast("string").alias("score_basis")
 )
 
 # 3. Collaborative Filtering
@@ -322,7 +374,8 @@ df_cf = df_collab_top5.select(
     F.col("recommended_product_id"),
     F.lit("collaborative_filtering").alias("recommendation_type"),
     F.col("similarity_score").alias("score"),
-    "rank"
+    "rank",
+    F.lit(None).cast("string").alias("score_basis")
 )
 
 # Union de todas as recomendações
@@ -344,10 +397,11 @@ total_products = spark.table(get_full_table_name(SCHEMA_BRONZE, "products_raw"))
 print("=" * 70)
 print("SISTEMA DE RECOMENDAÇÃO - RESUMO")
 print("=" * 70)
-print(f"\n1️⃣ NEXT BEST PRODUCT:")
+print(f"\n1️⃣ NEXT BEST PRODUCT (híbrido: popularidade + categoria + preço):")
 print(f"   Clientes com recomendações: {df_top_recommendations.select('customer_id').distinct().count():,}")
 print(f"   Total de recomendações: {df_top_recommendations.count():,}")
-print(f"   Média de score: {df_top_recommendations.agg(F.avg('conversion_rate')).collect()[0][0]:.4f}")
+print(f"   Média de score: {df_top_recommendations.agg(F.avg('recommendation_score')).collect()[0][0]:.4f}")
+print(f"   Cold-start (fallback popularidade pura): {n_cold_start:,} clientes ({n_cold_start/n_total:.1%})")
 
 print(f"\n2️⃣ NEXT BEST ACTION:")
 print(f"   Clientes com ações: {df_actions.count():,}")
