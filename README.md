@@ -54,7 +54,8 @@ customer-intelligence-databricks/
 │   ├── Modelo Churn Prediction.py             # XGBoost + MLflow (fluxo principal)
 │   ├── Modelo Propensity Score.py             # Probabilidade de compra
 │   ├── Segmentacao Clientes Clustering.py     # K-Means (5 segmentos)
-│   ├── Sistema Recomendacao.py                # Next best action
+│   ├── Sistema Recomendacao.py                # Next best action (híbrido + cold-start)
+│   ├── Ativacao Saldo Dormente.py             # Priorização por valor em risco não resgatado
 │   ├── AutoML Databricks Churn.py             # Comparação com Databricks AutoML
 │   ├── Automated Model Retraining.py          # Pipeline de retreino automático
 │   ├── Model_Explainability_SHAP.py           # Explicabilidade (waterfall/dependence/force plot)
@@ -62,7 +63,8 @@ customer-intelligence-databricks/
 ├── 05_scoring/
 │   └── Batch Scoring.py                       # Scoring em lote
 ├── 06_experimentation/
-│   └── AB Testing e Causal Inference.py       # Controle vs Tratamento, Lift, ROAS
+│   ├── AB Testing e Causal Inference.py       # Controle vs Tratamento, Lift, ROAS
+│   └── Multi-Armed Bandit - Thompson Sampling.py  # Alocação dinâmica de tráfego
 ├── 07_monitoring/
 │   └── Monitoramento Performance.py           # Drift detection, KPIs
 ├── 08_dashboards/
