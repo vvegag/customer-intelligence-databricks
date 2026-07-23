@@ -403,7 +403,7 @@ def quarantine_invalid_transactions():
 # (Rodar após pipeline executar)
 
 # Este código é para referência - DLT já faz isso automaticamente
-lineage_info = f"""
+lineage_info = """
 🔗 LINEAGE AUTOMÁTICO:
 
 O Lakeflow Pipelines rastreia automaticamente:

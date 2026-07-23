@@ -38,9 +38,16 @@ import numpy as np
 
 CATALOG = "customer_intelligence"
 SCHEMA_SILVER = "silver"
+SCHEMA_GOLD = "gold"
 
 import warnings
 warnings.filterwarnings('ignore')
+
+import mlflow
+import mlflow.prophet
+from mlflow.tracking import MlflowClient
+
+mlflow.set_registry_uri("databricks-uc")
 
 print("✓ Configuração carregada")
 
@@ -100,12 +107,43 @@ previsao_holdout = previsao.set_index("ds").loc[df_teste["ds"], "yhat"]
 mae = mean_absolute_error(df_teste["y"], previsao_holdout)
 mape = mean_absolute_percentage_error(df_teste["y"], previsao_holdout)
 
+# Registro no Unity Catalog Model Registry, mesmo padrão de Modelo Propensity
+# Score.py. IMPORTANTE: só modelo_prophet (treinado no dado real acima) é
+# registrado — o modelo_ilustrativo da seção 3 (sazonalidade sintética) nunca
+# deve ir pro registry, seria desonesto apresentar como forecast de verdade.
+model_name = f"{CATALOG}.{SCHEMA_GOLD}.forecast_gmv_model"
+
+with mlflow.start_run(run_name="forecast_prophet_v1") as run:
+    mlflow.log_params({
+        "n_holdout_weeks": N_HOLDOUT,
+        "interval_width": 0.90,
+        "yearly_seasonality": False,
+        "weekly_seasonality": False
+    })
+    mlflow.log_metrics({"mae": mae, "mape": mape})
+
+    model_info = mlflow.prophet.log_model(
+        modelo_prophet, "model",
+        registered_model_name=model_name
+    )
+
+client = MlflowClient()
+try:
+    current_champion = client.get_model_version_by_alias(model_name, "champion")
+    client.set_registered_model_alias(model_name, "challenger", current_champion.version)
+    print(f"✓ Champion anterior (v{current_champion.version}) rebaixado para challenger")
+except Exception:
+    print("ℹ️ Primeira execução — ainda não existia um champion registrado")
+
+client.set_registered_model_alias(model_name, "champion", model_info.registered_model_version)
+print(f"✓ Modelo registrado: {model_name}@champion (v{model_info.registered_model_version})")
+
 print(f"✓ Modelo treinado com {len(df_treino)} semanas, validado em {N_HOLDOUT} semanas de holdout")
 print(f"  MAE no holdout: R$ {mae:,.2f}")
 print(f"  MAPE no holdout: {mape:.1%}")
-print(f"\n  ⚠️ Como a série não tem sazonalidade real (dado sintético uniforme), o Prophet")
-print(f"     essencialmente projeta a tendência recente + intervalo de confiança —")
-print(f"     não há padrão de calendário real pra ele aprender aqui.")
+print("\n  ⚠️ Como a série não tem sazonalidade real (dado sintético uniforme), o Prophet")
+print("     essencialmente projeta a tendência recente + intervalo de confiança —")
+print("     não há padrão de calendário real pra ele aprender aqui.")
 
 # COMMAND ----------
 
@@ -168,8 +206,8 @@ print("FORECAST DE RESGATE - RESUMO")
 print("="*60)
 print(f"✅ Série real: {len(df_semanal)} semanas de resgate agregado")
 print(f"✅ MAE holdout: R$ {mae:,.2f} | MAPE holdout: {mape:.1%}")
-print(f"✅ Forecast gerado para as próximas 8 semanas")
-print(f"✅ Seção ilustrativa demonstra decomposição de sazonalidade (dado sintético à parte)")
+print("✅ Forecast gerado para as próximas 8 semanas")
+print("✅ Seção ilustrativa demonstra decomposição de sazonalidade (dado sintético à parte)")
 print("="*60)
 
 # COMMAND ----------

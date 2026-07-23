@@ -192,7 +192,7 @@ n_cold_start = df_customers.select("customer_id").exceptAll(
 ).count()
 n_total = df_customers.count()
 print(f"✓ Recomendações geradas: {df_top_recommendations.count():,} recomendações")
-print(f"  Top 5 produtos por cliente (score híbrido: popularidade + categoria + preço)")
+print("  Top 5 produtos por cliente (score híbrido: popularidade + categoria + preço)")
 print(f"  Clientes cold-start (sem histórico de compra): {n_cold_start:,} de {n_total:,} ({n_cold_start/n_total:.1%})")
 df_top_recommendations.filter(F.col("customer_id") == "C001").select(
     "customer_id", "product_name", "category", "recommendation_score", "score_basis", "rank"
@@ -268,40 +268,46 @@ df_actions.select(
 
 # COMMAND ----------
 
-# DBTITLE 1,3️⃣ Collaborative Filtering - Matrix de Co-ocorrência
+# DBTITLE 1,3️⃣ Collaborative Filtering - Matriz de Co-ocorrência (Cosine Similarity)
 # Criar matriz cliente-produto (quem comprou o quê)
 df_customer_product = df_transactions.select(
     "customer_id", "product_id"
 ).distinct()
 
-# Calcular co-ocorrência: produtos comprados juntos
-df_cooccurrence = df_customer_product.alias("a").join(
-    df_customer_product.alias("b"),
-    F.col("a.customer_id") == F.col("b.customer_id")
-).filter(
-    F.col("a.product_id") != F.col("b.product_id")
-).groupBy(
-    F.col("a.product_id").alias("product_a"),
-    F.col("b.product_id").alias("product_b")
-).agg(
-    F.count("*").alias("co_purchase_count")
-)
+# Similaridade item-a-item de cosseno de verdade — a versão anterior calculava
+# só co_purchase_count / count_a, uma razão assimétrica (mais próxima de
+# "confidence" de regras de associação) que não é cosine, apesar do nome.
+# Catálogo é pequeno o bastante (poucas centenas de produtos) pra caber em
+# memória: monta a matriz binária esparsa cliente×produto e usa
+# cosine_similarity do scikit-learn nas colunas (produtos).
+df_customer_product_pd = df_customer_product.toPandas()
 
-# Calcular score de similaridade
-total_product_purchases = df_customer_product.groupBy("product_id").count()
+customers_cf = df_customer_product_pd["customer_id"].astype("category")
+products_cf = df_customer_product_pd["product_id"].astype("category")
 
-df_similarity = df_cooccurrence.join(
-    total_product_purchases.select(
-        F.col("product_id").alias("product_a"),
-        F.col("count").alias("count_a")
+matriz_interacao = csr_matrix(
+    (
+        np.ones(len(df_customer_product_pd)),
+        (customers_cf.cat.codes, products_cf.cat.codes)
     ),
-    "product_a"
-).withColumn(
-    "similarity_score",
-    F.col("co_purchase_count") / F.col("count_a")
+    shape=(len(customers_cf.cat.categories), len(products_cf.cat.categories))
 )
 
-print(f"✓ Matriz de similaridade criada: {df_similarity.count():,} pares")
+similaridade_produtos = cosine_similarity(matriz_interacao.T)
+produtos_ordenados = products_cf.cat.categories.tolist()
+
+pares_similaridade = [
+    (produtos_ordenados[i], produtos_ordenados[j], float(similaridade_produtos[i, j]))
+    for i in range(len(produtos_ordenados))
+    for j in range(len(produtos_ordenados))
+    if i != j and similaridade_produtos[i, j] > 0
+]
+
+df_similarity = spark.createDataFrame(
+    pd.DataFrame(pares_similaridade, columns=["product_a", "product_b", "similarity_score"])
+)
+
+print(f"✓ Matriz de similaridade (cosine) criada: {df_similarity.count():,} pares")
 df_similarity.orderBy(F.desc("similarity_score")).limit(20).display()
 
 # COMMAND ----------
@@ -384,7 +390,7 @@ df_all_recommendations = df_nbp.union(df_nba).union(df_cf)
 create_or_replace_table(df_all_recommendations, SCHEMA_GOLD, "recommendations")
 
 print(f"\n✓ Total de recomendações salvas: {df_all_recommendations.count():,}")
-print(f"\nDistribuição por tipo:")
+print("\nDistribuição por tipo:")
 df_all_recommendations.groupBy("recommendation_type").count().display()
 
 # COMMAND ----------
@@ -397,24 +403,24 @@ total_products = spark.table(get_full_table_name(SCHEMA_BRONZE, "products_raw"))
 print("=" * 70)
 print("SISTEMA DE RECOMENDAÇÃO - RESUMO")
 print("=" * 70)
-print(f"\n1️⃣ NEXT BEST PRODUCT (híbrido: popularidade + categoria + preço):")
+print("\n1️⃣ NEXT BEST PRODUCT (híbrido: popularidade + categoria + preço):")
 print(f"   Clientes com recomendações: {df_top_recommendations.select('customer_id').distinct().count():,}")
 print(f"   Total de recomendações: {df_top_recommendations.count():,}")
 print(f"   Média de score: {df_top_recommendations.agg(F.avg('recommendation_score')).collect()[0][0]:.4f}")
 print(f"   Cold-start (fallback popularidade pura): {n_cold_start:,} clientes ({n_cold_start/n_total:.1%})")
 
-print(f"\n2️⃣ NEXT BEST ACTION:")
+print("\n2️⃣ NEXT BEST ACTION:")
 print(f"   Clientes com ações: {df_actions.count():,}")
 actions_dist = df_actions.groupBy("recommended_action").count().collect()
 for row in actions_dist:
     print(f"   - {row['recommended_action']}: {row['count']:,}")
 
-print(f"\n3️⃣ COLLABORATIVE FILTERING:")
+print("\n3️⃣ COLLABORATIVE FILTERING:")
 print(f"   Clientes com recomendações: {df_collab_top5.select('customer_id').distinct().count():,}")
 print(f"   Total de recomendações: {df_collab_top5.count():,}")
 print(f"   Média de similaridade: {df_collab_top5.agg(F.avg('similarity_score')).collect()[0][0]:.4f}")
 
-print(f"\n📊 COBERTURA:")
+print("\n📊 COBERTURA:")
 print(f"   Total clientes: {total_customers:,}")
 print(f"   Clientes com alguma recomendação: {df_all_recommendations.select('customer_id').distinct().count():,}")
 print(f"   Taxa de cobertura: {(df_all_recommendations.select('customer_id').distinct().count() / total_customers * 100):.1f}%")

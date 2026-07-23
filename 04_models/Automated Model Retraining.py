@@ -35,15 +35,13 @@
 
 # DBTITLE 1,1. Setup e Imports
 # Databricks notebook source
-import pyspark.sql.functions as F
 from pyspark.sql.types import *
-from datetime import datetime, timedelta
+from datetime import datetime
 import mlflow
 import mlflow.xgboost
 from mlflow.tracking import MlflowClient
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score
-import json
 
 # MLflow setup
 mlflow.set_registry_uri('databricks-uc')
@@ -175,10 +173,6 @@ def get_current_model_performance(model_name: str) -> dict:
     Obtém performance atual do modelo em produção
     """
     try:
-        # Get latest model from registry
-        model_uri = f"models:/{MODEL_REGISTRY_PREFIX}.{model_name}@champion"
-        model_version = mlflow.pyfunc.load_model(model_uri)
-        
         # Get latest predictions from production
         if model_name == "churn_model":
             # churn_predictions já grava actual_churn/predicted_churn (ver Modelo
@@ -196,8 +190,9 @@ def get_current_model_performance(model_name: str) -> dict:
             }
         
         elif model_name == "propensity_model":
-            preds_df = spark.table(f"{CATALOG}.gold.propensity_scores")
-            # Similar logic for propensity
+            # TODO: métricas reais de propensity ainda não implementadas (ver
+            # Automated Model Retraining.py — só o branch de churn tem avaliação
+            # real hoje). Placeholder documentado, não dado de verdade.
             metrics = {'accuracy': 0.82, 'auc_roc': 0.88}  # Placeholder
         
         else:
@@ -333,7 +328,7 @@ def retrain_model(model_name: str) -> str:
             # Similar training logic for propensity
             mlflow.log_metric("accuracy", 0.85)
             mlflow.log_metric("auc_roc", 0.90)
-            print(f"   ✅ Propensity model retreinado")
+            print("   ✅ Propensity model retreinado")
         
         run_id = run.info.run_id
         print(f"   📝 Run ID: {run_id}")
@@ -411,10 +406,10 @@ def promote_model(model_name: str, run_id: str, comparison: dict) -> bool:
     Promove modelo para 'champion' alias no UC registry
     """
     if not comparison['should_promote']:
-        print(f"\n⏸️ Modelo NÃO promovido: improvement insuficiente")
+        print("\n⏸️ Modelo NÃO promovido: improvement insuficiente")
         return False
     
-    print(f"\n🚀 Promovendo modelo para CHAMPION...")
+    print("\n🚀 Promovendo modelo para CHAMPION...")
     
     try:
         # Get model version from run

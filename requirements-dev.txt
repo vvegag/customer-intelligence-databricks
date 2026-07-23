@@ -1,3 +1,4 @@
 # Dependências só para desenvolvimento/CI (não precisam estar no cluster Databricks)
 pytest>=8.0.0
 pyyaml>=6.0.0
+ruff==0.15.22

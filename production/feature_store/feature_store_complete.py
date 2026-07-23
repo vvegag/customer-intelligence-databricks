@@ -43,7 +43,7 @@ print("✅ Installation complete!")
 from databricks.feature_engineering import FeatureEngineeringClient, FeatureLookup
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from datetime import datetime, timedelta
+from datetime import datetime
 import mlflow
 
 print("✅ Imports carregados com sucesso!")
@@ -62,7 +62,7 @@ schema = "gold"
 print("✅ Feature Engineering Client inicializado!")
 print(f"📊 Catalog: {catalog}")
 print(f"📂 Schema: {schema}")
-print(f"🎯 Feature Store pronto para uso!")
+print("🎯 Feature Store pronto para uso!")
 
 # COMMAND ----------
 
@@ -93,13 +93,13 @@ feature_columns = [
 
 features_to_store = customer_features_df.select(feature_columns)
 
-print(f"\n✅ Features preparadas para Feature Store:")
+print("\n✅ Features preparadas para Feature Store:")
 print(f"   📊 Total de customers: {features_to_store.count():,}")
 print(f"   📋 Features selecionadas: {len(feature_columns)-2}")  # -2 para excluir customer_id e timestamp
-print(f"\n📊 Schema:")
+print("\n📊 Schema:")
 features_to_store.printSchema()
 
-print(f"\n🔍 Sample de 5 registros:")
+print("\n🔍 Sample de 5 registros:")
 display(features_to_store.limit(5))
 
 # COMMAND ----------
@@ -119,27 +119,27 @@ try:
         df=features_to_store,
         description="Customer features para modelos de churn, propensity e segmentation"
     )
-    print(f"✅ Feature Table criada com sucesso!")
+    print("✅ Feature Table criada com sucesso!")
 except Exception as e:
     if "already exists" in str(e).lower():
-        print(f"⚠️ Feature Table já existe. Atualizando com novos dados...")
+        print("⚠️ Feature Table já existe. Atualizando com novos dados...")
         # Write/Overwrite features
         fe.write_table(
             name=feature_table_name,
             df=features_to_store,
             mode="merge"  # ou "overwrite" para substituir tudo
         )
-        print(f"✅ Features atualizadas com sucesso!")
+        print("✅ Features atualizadas com sucesso!")
     else:
         raise e
 
-print(f"\n🎯 Feature Store Status:")
+print("\n🎯 Feature Store Status:")
 print(f"   ✅ Offline Table: {feature_table_name}")
-print(f"   📊 Features disponíveis para training")
-print(f"   🔍 Point-in-time correctness habilitado")
+print("   📊 Features disponíveis para training")
+print("   🔍 Point-in-time correctness habilitado")
 
 # Verificar conteúdo
-print(f"\n📊 Conteúdo da Feature Table:")
+print("\n📊 Conteúdo da Feature Table:")
 feature_table_df = spark.table(feature_table_name)
 print(f"   Total de registros: {feature_table_df.count():,}")
 display(feature_table_df.limit(10))
@@ -165,11 +165,11 @@ labels_df = spark.createDataFrame(
     ["customer_id", "event_timestamp", "is_churned"]
 ).withColumn("event_timestamp", to_timestamp(col("event_timestamp")))
 
-print(f"\n📖 Labels dataset (exemplo):")
+print("\n📖 Labels dataset (exemplo):")
 display(labels_df)
 
 # Criar training set com Feature Lookup
-print(f"\n🔍 Criando Training Set com Feature Lookup...")
+print("\n🔍 Criando Training Set com Feature Lookup...")
 
 training_set = fe.create_training_set(
     df=labels_df,
@@ -189,12 +189,12 @@ training_set = fe.create_training_set(
 # Carregar training data
 training_df = training_set.load_df()
 
-print(f"\n✅ Training Set criado com Point-in-Time Correctness!")
-print(f"   📊 Features buscadas no timestamp correto (event_timestamp)")
-print(f"   🚫 Evita data leakage (features futuras)")
-print(f"   ✅ Garante consistência temporal")
+print("\n✅ Training Set criado com Point-in-Time Correctness!")
+print("   📊 Features buscadas no timestamp correto (event_timestamp)")
+print("   🚫 Evita data leakage (features futuras)")
+print("   ✅ Garante consistência temporal")
 
-print(f"\n📊 Training Data (features + label):")
+print("\n📊 Training Data (features + label):")
 display(training_df)
 
 # COMMAND ----------
@@ -203,14 +203,14 @@ display(training_df)
 # Criar Online Feature Table para serving de baixa latência
 online_table_name = f"{catalog}.{schema}.customer_features_online"
 
-print(f"🚀 Configurando Online Feature Store")
+print("🚀 Configurando Online Feature Store")
 print("=" * 60)
-print(f"\n🎯 Objetivo: Reduzir latência de inference (<50ms)")
+print("\n🎯 Objetivo: Reduzir latência de inference (<50ms)")
 print(f"📊 Online Table: {online_table_name}")
 
 try:
     # Criar online table
-    print(f"\n🔧 Criando Online Feature Table...")
+    print("\n🔧 Criando Online Feature Table...")
 
     online_table_spec = fe.publish_table(
         name=feature_table_name,
@@ -222,22 +222,22 @@ try:
         }
     )
 
-    print(f"\n✅ Online Feature Store configurado!")
-    print(f"\n💡 Benefícios:")
-    print(f"   ⚡ Latência: <50ms (vs 500ms+ offline)")
-    print(f"   🔄 Sync automático: offline → online")
-    print(f"   🎯 Ideal para: Model Serving real-time")
-    print(f"   📊 Escala: Milhões de requests/segundo")
+    print("\n✅ Online Feature Store configurado!")
+    print("\n💡 Benefícios:")
+    print("   ⚡ Latência: <50ms (vs 500ms+ offline)")
+    print("   🔄 Sync automático: offline → online")
+    print("   🎯 Ideal para: Model Serving real-time")
+    print("   📊 Escala: Milhões de requests/segundo")
 
 except Exception as e:
-    print(f"\n⚠️ Nota: Online Feature Store requer configuração adicional")
+    print("\n⚠️ Nota: Online Feature Store requer configuração adicional")
     print(f"   Erro: {str(e)[:200]}")
-    print(f"\n📝 Para produção, configure:")
-    print(f"   1. Databricks SQL Warehouse")
-    print(f"   2. Online Store endpoint")
-    print(f"   3. Sync schedule (ex: a cada 5 minutos)")
+    print("\n📝 Para produção, configure:")
+    print("   1. Databricks SQL Warehouse")
+    print("   2. Online Store endpoint")
+    print("   3. Sync schedule (ex: a cada 5 minutos)")
 
-print(f"\n📚 Documentação: https://docs.databricks.com/machine-learning/feature-store/online-tables.html")
+print("\n📚 Documentação: https://docs.databricks.com/machine-learning/feature-store/online-tables.html")
 
 # COMMAND ----------
 
@@ -265,15 +265,15 @@ def calculate_days_since_last_purchase(last_purchase_date):
     delta = (today - last_purchase_date).days
     return delta
 
-print(f"\n✅ Função On-Demand Feature criada!")
-print(f"\n💡 Características:")
-print(f"   ⚡ Calculada durante inference (não precisa re-train)")
-print(f"   🔄 Sempre atualizada (usa timestamp atual)")
-print(f"   🎯 Ideal para: features temporais dinâmicas")
-print(f"   📊 Exemplos: days_since_X, time_of_day, day_of_week")
+print("\n✅ Função On-Demand Feature criada!")
+print("\n💡 Características:")
+print("   ⚡ Calculada durante inference (não precisa re-train)")
+print("   🔄 Sempre atualizada (usa timestamp atual)")
+print("   🎯 Ideal para: features temporais dinâmicas")
+print("   📊 Exemplos: days_since_X, time_of_day, day_of_week")
 
 # Demonstração
-print(f"\n🔍 Demonstração:")
+print("\n🔍 Demonstração:")
 sample_df = spark.table(f"{catalog}.{schema}.customer_features").limit(5)
 
 # Assumindo que existe uma coluna last_purchase_date
@@ -286,9 +286,9 @@ if "last_purchase_date" in sample_df.columns:
         "customer_id", "last_purchase_date", "days_since_last_purchase"
     ))
 else:
-    print(f"   📝 Exemplo conceitual - adicionar last_purchase_date na prática")
+    print("   📝 Exemplo conceitual - adicionar last_purchase_date na prática")
 
-print(f"\n📚 Integração: Use no Model Serving via custom PyFunc model")
+print("\n📚 Integração: Use no Model Serving via custom PyFunc model")
 
 # COMMAND ----------
 
@@ -297,19 +297,17 @@ print(f"\n📚 Integração: Use no Model Serving via custom PyFunc model")
 print("🔍 Feature Lineage - Rastreamento Feature → Model")
 print("=" * 60)
 
-print(f"\n🎯 Objetivo: Rastrear quais features cada modelo usa")
-print(f"\n💡 Benefícios:")
-print(f"   📊 Governança: saber impacto de mudanças em features")
-print(f"   🔍 Debug: identificar features problemáticas")
-print(f"   📝 Documentação: automática e sempre atualizada")
-print(f"   ⚙️ Reprodução: versionar features + modelos juntos")
+print("\n🎯 Objetivo: Rastrear quais features cada modelo usa")
+print("\n💡 Benefícios:")
+print("   📊 Governança: saber impacto de mudanças em features")
+print("   🔍 Debug: identificar features problemáticas")
+print("   📝 Documentação: automática e sempre atualizada")
+print("   ⚙️ Reprodução: versionar features + modelos juntos")
 
 # Exemplo: treinar modelo simples e logar com feature lineage
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-import pandas as pd
 
-print(f"\n🧪 Exemplo: Training modelo com Feature Lineage...")
+print("\n🧪 Exemplo: Training modelo com Feature Lineage...")
 
 # Usar o training_set criado anteriormente
 training_pd = training_df.toPandas()
@@ -325,7 +323,7 @@ if len(training_pd) > 0:
     model = RandomForestClassifier(n_estimators=10, max_depth=3, random_state=42)
     model.fit(X, y)
 
-    print(f"\n✅ Modelo treinado!")
+    print("\n✅ Modelo treinado!")
 
     # Log model com Feature Store
     with mlflow.start_run(run_name="churn_with_feature_store") as run:
@@ -339,18 +337,18 @@ if len(training_pd) > 0:
             registered_model_name=f"{catalog}.{schema}.churn_model_fs"
         )
 
-        print(f"\n✅ Modelo logado com Feature Lineage!")
+        print("\n✅ Modelo logado com Feature Lineage!")
         print(f"   🎯 MLflow Run ID: {run.info.run_id}")
-        print(f"   🔗 Feature Lineage: automático via training_set")
+        print("   🔗 Feature Lineage: automático via training_set")
         print(f"   📊 Features rastreadas: {', '.join(feature_cols)}")
-        print(f"\n📚 Ver no MLflow UI: Experiments → Models → Feature Dependencies")
+        print("\n📚 Ver no MLflow UI: Experiments → Models → Feature Dependencies")
 else:
-    print(f"\n📝 Exemplo conceitual - usar dados reais em produção")
+    print("\n📝 Exemplo conceitual - usar dados reais em produção")
 
-print(f"\n✅ Feature Lineage configurado! Agora você pode:")
-print(f"   1️⃣ Ver quais modelos usam cada feature")
-print(f"   2️⃣ Avaliar impacto de mudanças em features")
-print(f"   3️⃣ Reproduzir resultados com versões exatas")
+print("\n✅ Feature Lineage configurado! Agora você pode:")
+print("   1️⃣ Ver quais modelos usam cada feature")
+print("   2️⃣ Avaliar impacto de mudanças em features")
+print("   3️⃣ Reproduzir resultados com versões exatas")
 
 # COMMAND ----------
 

@@ -58,15 +58,10 @@
 from pyspark.ml import Pipeline, PipelineModel
 from pyspark.ml.feature import (
     VectorAssembler, 
-    StandardScaler, 
-    StringIndexer,
-    OneHotEncoder,
-    Imputer
+    StandardScaler
 )
 from pyspark.ml.classification import (
-    RandomForestClassifier,
-    GBTClassifier,
-    LogisticRegression
+    RandomForestClassifier
 )
 from pyspark.ml.evaluation import (
     BinaryClassificationEvaluator,
@@ -74,8 +69,7 @@ from pyspark.ml.evaluation import (
 )
 from pyspark.ml.tuning import (
     CrossValidator,
-    ParamGridBuilder,
-    TrainValidationSplit
+    ParamGridBuilder
 )
 
 # PySpark SQL
@@ -130,11 +124,11 @@ df_ml = df.select(
 # Cache para performance (mantém em memória)
 df_ml = df_ml.cache()
 
-print(f"\n✅ Dados carregados!")
+print("\n✅ Dados carregados!")
 print(f"   📊 Total rows: {df_ml.count():,}")
 print(f"   📋 Features: {len(feature_columns)}")
 print(f"   🎯 Churn rate: {df_ml.filter('label = 1').count() / df_ml.count():.2%}")
-print(f"\n📈 Schema:")
+print("\n📈 Schema:")
 df_ml.printSchema()
 
 # Display sample
@@ -158,7 +152,7 @@ test_df = test_df.cache()
 train_count = train_df.count()
 test_count = test_df.count()
 
-print(f"\n✅ Split completo!")
+print("\n✅ Split completo!")
 print(f"   📈 Train: {train_count:,} rows")
 print(f"   📉 Test: {test_count:,} rows")
 print(f"   🎯 Train churn rate: {train_df.filter('label = 1').count() / train_count:.2%}")
@@ -240,7 +234,7 @@ with mlflow.start_run(run_name="sparkml_random_forest") as run:
     
     training_time = time.time() - start_time
     
-    print(f"\n✅ Training completo!")
+    print("\n✅ Training completo!")
     print(f"   ⏱️ Tempo: {training_time:.2f}s")
     print(f"   📊 Rows processadas: {train_count:,}")
     print(f"   ⚡ Throughput: {train_count/training_time:,.0f} rows/sec")
@@ -290,12 +284,12 @@ with mlflow.start_run(run_name="sparkml_random_forest") as run:
         registered_model_name=f"{catalog}.{schema}.churn_sparkml"
     )
     
-    print(f"\n🎯 Métricas:")
+    print("\n🎯 Métricas:")
     print(f"   📈 AUC-ROC: {auc:.4f}")
     print(f"   🎯 Accuracy: {accuracy:.4f}")
     print(f"   📊 F1-Score: {f1:.4f}")
     
-    print(f"\n✅ Modelo logado no MLflow!")
+    print("\n✅ Modelo logado no MLflow!")
     print(f"   🎯 Run ID: {run.info.run_id}")
     print(f"   📦 Model: {catalog}.{schema}.churn_sparkml")
 
@@ -369,7 +363,7 @@ crossval = CrossValidator(
 
 print(f"   ✅ 3-fold CV com {len(paramGrid)} combinações")
 print(f"   ⚡ Total runs: {len(paramGrid) * 3} (distribuídos)")
-print(f"   🔢 Parallelism: 2 (folds processados em paralelo)")
+print("   🔢 Parallelism: 2 (folds processados em paralelo)")
 
 # Train com CrossValidator (DEMORADO - distributed HPO)
 print("\n🚀 Iniciando distributed hyperparameter tuning...")
@@ -388,7 +382,7 @@ with mlflow.start_run(run_name="sparkml_crossvalidator") as run_cv:
     
     cv_time = time.time() - start_time_cv
     
-    print(f"\n✅ CrossValidator completo!")
+    print("\n✅ CrossValidator completo!")
     print(f"   ⏱️ Tempo total: {cv_time:.2f}s ({cv_time/60:.1f} min)")
     print(f"   🔢 Runs executados: {len(paramGrid) * 3}")
     print(f"   ⚡ Avg time per run: {cv_time/(len(paramGrid)*3):.1f}s")
@@ -397,7 +391,7 @@ with mlflow.start_run(run_name="sparkml_crossvalidator") as run_cv:
     best_model = cv_model.bestModel
     best_rf = best_model.stages[-1]  # Último stage (RF)
     
-    print(f"\n🏆 Best Model Parameters:")
+    print("\n🏆 Best Model Parameters:")
     print(f"   🌳 numTrees: {best_rf.getNumTrees}")
     print(f"   📊 maxDepth: {best_rf.getMaxDepth()}")
     print(f"   🎯 subsamplingRate: {best_rf.getSubsamplingRate()}")
@@ -414,7 +408,7 @@ with mlflow.start_run(run_name="sparkml_crossvalidator") as run_cv:
     )
     accuracy_cv = evaluator_acc_cv.evaluate(predictions_cv)
     
-    print(f"\n🎯 Best Model Performance:")
+    print("\n🎯 Best Model Performance:")
     print(f"   📈 AUC-ROC: {auc_cv:.4f}")
     print(f"   🎯 Accuracy: {accuracy_cv:.4f}")
     
@@ -432,7 +426,7 @@ with mlflow.start_run(run_name="sparkml_crossvalidator") as run_cv:
         "best_model"
     )
     
-    print(f"\n✅ Best model logado no MLflow!")
+    print("\n✅ Best model logado no MLflow!")
     print(f"   🎯 Run ID: {run_cv.info.run_id}")
 
 # COMMAND ----------
@@ -445,35 +439,35 @@ print("=" * 60)
 # Path para salvar modelo
 model_path = f"/tmp/{catalog}_{schema}_sparkml_pipeline"
 
-print(f"\n💾 Salvando pipeline completo...")
+print("\n💾 Salvando pipeline completo...")
 print(f"   📁 Path: {model_path}")
 
 # Save pipeline (serialização completa)
 pipeline_model.write().overwrite().save(model_path)
 
-print(f"\n✅ Pipeline salvo!")
+print("\n✅ Pipeline salvo!")
 print("\n📊 Conteúdo do pipeline:")
-print(f"   1. VectorAssembler (features)")
-print(f"   2. StandardScaler (normalização)")
-print(f"   3. RandomForestClassifier (modelo treinado)")
+print("   1. VectorAssembler (features)")
+print("   2. StandardScaler (normalização)")
+print("   3. RandomForestClassifier (modelo treinado)")
 
 # Load pipeline
-print(f"\n📂 Carregando pipeline salvo...")
+print("\n📂 Carregando pipeline salvo...")
 loaded_pipeline = PipelineModel.load(model_path)
 
-print(f"\n✅ Pipeline carregado!")
+print("\n✅ Pipeline carregado!")
 print(f"   🔢 Stages: {len(loaded_pipeline.stages)}")
 
 # Test loaded pipeline
-print(f"\n🧪 Testando pipeline carregado...")
+print("\n🧪 Testando pipeline carregado...")
 test_predictions = loaded_pipeline.transform(test_df.limit(100))
 test_auc = evaluator_auc.evaluate(test_predictions)
 
-print(f"\n✅ Pipeline carregado funciona!")
+print("\n✅ Pipeline carregado funciona!")
 print(f"   🎯 AUC (100 rows): {test_auc:.4f}")
 
 # Demonstrar inference em batch (distributed)
-print(f"\n🚀 Inference em larga escala (distributed)...")
+print("\n🚀 Inference em larga escala (distributed)...")
 
 # Criar batch grande para inference
 large_batch = test_df  # Todo o test set
@@ -483,11 +477,11 @@ batch_predictions = loaded_pipeline.transform(large_batch)
 batch_count = batch_predictions.count()  # Trigger action
 inference_time = time.time() - start_inference
 
-print(f"\n✅ Inference completa!")
+print("\n✅ Inference completa!")
 print(f"   📊 Rows: {batch_count:,}")
 print(f"   ⏱️ Tempo: {inference_time:.2f}s")
 print(f"   ⚡ Throughput: {batch_count/inference_time:,.0f} rows/sec")
-print(f"\n💡 Inference distribuído = Escalabilidade ilimitada!")
+print("\n💡 Inference distribuído = Escalabilidade ilimitada!")
 
 # Display inference results
 print("\n🔍 Inference Results Sample:")
@@ -540,7 +534,7 @@ display(fig)
 
 # Top 3 features
 top_3 = importance_pandas.head(3)
-print(f"\n🏆 Top 3 Features:")
+print("\n🏆 Top 3 Features:")
 for idx, row in top_3.iterrows():
     print(f"   {idx+1}. {row['feature']}: {row['importance']:.4f}")
 

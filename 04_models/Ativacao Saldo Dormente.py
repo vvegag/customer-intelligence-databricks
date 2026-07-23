@@ -253,7 +253,7 @@ mapa_labels = dict(zip(categorias_ordenadas, labels_disponiveis))
 df_priorizacao["prioridade_ativacao"] = df_priorizacao["prioridade_ativacao"].map(mapa_labels)
 
 print("✓ Priorização calculada")
-print(f"\nTop 10 clientes por valor em risco:")
+print("\nTop 10 clientes por valor em risco:")
 print(df_priorizacao.head(10).to_string(index=False))
 
 df_priorizacao_spark = spark.createDataFrame(df_priorizacao)

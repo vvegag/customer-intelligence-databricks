@@ -46,7 +46,6 @@ from sklearn.metrics import (
     accuracy_score, 
     roc_auc_score, 
     f1_score, 
-    precision_score,
     confusion_matrix,
     classification_report
 )
@@ -79,7 +78,7 @@ print("✅ MLflow configurado!")
 print(f"📊 Experiment: {experiment_name}")
 print(f"🎯 Catalog: {catalog}")
 print(f"📁 Schema: {schema}")
-print(f"\n🔗 MLflow UI: Workspace → Machine Learning → Experiments")
+print("\n🔗 MLflow UI: Workspace → Machine Learning → Experiments")
 
 # COMMAND ----------
 
@@ -115,7 +114,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.3, random_state=42, stratify=y
 )
 
-print(f"\n✅ Dados preparados!")
+print("\n✅ Dados preparados!")
 print(f"   📊 Total samples: {len(X):,}")
 print(f"   🎯 Churn rate: {y.mean():.2%}")
 print(f"   📈 Train size: {len(X_train):,}")
@@ -203,11 +202,11 @@ with mlflow.start_run(run_name="churn_hpo_experiment") as parent_run:
     mlflow.log_param("best_run_id", best_run_id)
     mlflow.log_param("total_configs_tested", len(configs))
     
-    print(f"\n" + "=" * 60)
-    print(f"✅ Hyperparameter Tuning Completo!")
+    print("\n" + "=" * 60)
+    print("✅ Hyperparameter Tuning Completo!")
     print(f"   🏆 Best AUC: {best_auc:.4f}")
     print(f"   🎯 Best Run ID: {best_run_id}")
-    print(f"\n📊 Resultados:")
+    print("\n📊 Resultados:")
     results_df = pd.DataFrame(results)
     display(results_df.sort_values('auc', ascending=False))
 
@@ -232,7 +231,7 @@ y_pred_proba = best_model.predict_proba(X_test)[:, 1]
 # 1. Churn Cost Savings
 # Usar monetary_total como proxy para CLV
 avg_clv = features_pd['monetary_total'].mean()
-print(f"\n1️⃣ Churn Cost Savings:")
+print("\n1️⃣ Churn Cost Savings:")
 print(f"   💵 Average Customer Value: R$ {avg_clv:,.2f}")
 
 # Custo de retenção (20% do CLV)
@@ -248,7 +247,7 @@ print(f"   ✅ True Positives: {TP}")
 print(f"   💰 Churn Cost Savings: R$ {churn_cost_savings:,.2f}")
 
 # 2. Precision at Top 10%
-print(f"\n2️⃣ Precision @ Top 10%:")
+print("\n2️⃣ Precision @ Top 10%:")
 top_10_pct = int(len(y_test) * 0.10)
 top_10_idx = np.argsort(y_pred_proba)[-top_10_pct:]
 precision_top_10 = y_test.iloc[top_10_idx].mean()
@@ -257,7 +256,7 @@ print(f"   🎯 Top 10% size: {top_10_pct}")
 print(f"   📈 Precision @ Top 10%: {precision_top_10:.2%}")
 
 # 3. Business Impact Score (composto)
-print(f"\n3️⃣ Business Impact Score:")
+print("\n3️⃣ Business Impact Score:")
 auc = roc_auc_score(y_test, y_pred_proba)
 recall = ((y_test == 1) & (y_pred == 1)).sum() / (y_test == 1).sum()
 
@@ -287,7 +286,7 @@ with mlflow.start_run(run_name="model_with_custom_metrics") as run:
     # Model
     mlflow.sklearn.log_model(best_model, "model")
     
-    print(f"\n✅ Custom metrics logadas no MLflow!")
+    print("\n✅ Custom metrics logadas no MLflow!")
     print(f"   🎯 Run ID: {run.info.run_id}")
 
 # COMMAND ----------
@@ -298,7 +297,7 @@ print("🖼️ Criando Custom Artifacts...")
 print("=" * 60)
 
 # 1. Feature Importance Plot
-print(f"\n1️⃣ Feature Importance Plot")
+print("\n1️⃣ Feature Importance Plot")
 fig1, ax1 = plt.subplots(figsize=(10, 6))
 importances = best_model.feature_importances_
 indices = np.argsort(importances)[::-1]
@@ -312,10 +311,10 @@ ax1.set_ylabel('Importance')
 ax1.grid(axis='y', alpha=0.3)
 plt.tight_layout()
 
-print(f"   ✅ Feature Importance criado")
+print("   ✅ Feature Importance criado")
 
 # 2. Confusion Matrix
-print(f"\n2️⃣ Confusion Matrix")
+print("\n2️⃣ Confusion Matrix")
 fig2, ax2 = plt.subplots(figsize=(8, 6))
 cm = confusion_matrix(y_test, y_pred)
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax2)
@@ -323,10 +322,10 @@ ax2.set_title('Confusion Matrix - Churn Prediction', fontsize=14, fontweight='bo
 ax2.set_xlabel('Predicted')
 ax2.set_ylabel('Actual')
 
-print(f"   ✅ Confusion Matrix criado")
+print("   ✅ Confusion Matrix criado")
 
 # 3. ROC Curve
-print(f"\n3️⃣ ROC Curve")
+print("\n3️⃣ ROC Curve")
 from sklearn.metrics import roc_curve
 
 fig3, ax3 = plt.subplots(figsize=(8, 6))
@@ -342,7 +341,7 @@ ax3.legend()
 ax3.grid(alpha=0.3)
 plt.tight_layout()
 
-print(f"   ✅ ROC Curve criado")
+print("   ✅ ROC Curve criado")
 
 # Log artifacts com MLflow
 with mlflow.start_run(run_name="model_with_artifacts") as run:
@@ -363,13 +362,13 @@ with mlflow.start_run(run_name="model_with_artifacts") as run:
     mlflow.log_metric("auc_roc", auc_score)
     mlflow.log_metric("accuracy", accuracy_score(y_test, y_pred))
     
-    print(f"\n✅ Artifacts logados no MLflow!")
+    print("\n✅ Artifacts logados no MLflow!")
     print(f"   🎯 Run ID: {run.info.run_id}")
-    print(f"   🖼️ Artifacts: feature_importance.png, confusion_matrix.png, roc_curve.png")
-    print(f"   📊 Classification report: classification_report.json")
+    print("   🖼️ Artifacts: feature_importance.png, confusion_matrix.png, roc_curve.png")
+    print("   📊 Classification report: classification_report.json")
 
 # Display plots
-print(f"\n📊 Visualizações:")
+print("\n📊 Visualizações:")
 display(fig1)
 display(fig2)
 display(fig3)
@@ -381,7 +380,6 @@ display(fig3)
 print("✅ Criando Model Signature...")
 print("=" * 60)
 
-from mlflow.models.signature import infer_signature
 
 # Inferir signature dos dados
 input_example = X_test.head(3)
@@ -389,11 +387,11 @@ output_example = best_model.predict_proba(input_example)
 
 signature = infer_signature(input_example, output_example)
 
-print(f"\n📝 Model Signature:")
-print(f"\nINPUT SCHEMA:")
+print("\n📝 Model Signature:")
+print("\nINPUT SCHEMA:")
 print(signature.inputs)
 
-print(f"\nOUTPUT SCHEMA:")
+print("\nOUTPUT SCHEMA:")
 print(signature.outputs)
 
 # Log model com signature
@@ -410,18 +408,18 @@ with mlflow.start_run(run_name="model_with_signature") as run:
     mlflow.log_metric("auc_roc", roc_auc_score(y_test, y_pred_proba))
     mlflow.log_metric("accuracy", accuracy_score(y_test, y_pred))
     
-    print(f"\n✅ Model com Signature logado!")
+    print("\n✅ Model com Signature logado!")
     print(f"   🎯 Run ID: {run.info.run_id}")
-    print(f"\n💡 Benefícios do Model Signature:")
-    print(f"   ✅ Validação automática de input no serving")
-    print(f"   ✅ Documentação do schema input/output")
-    print(f"   ✅ Type checking em produção")
-    print(f"   ✅ Prevent runtime errors")
+    print("\n💡 Benefícios do Model Signature:")
+    print("   ✅ Validação automática de input no serving")
+    print("   ✅ Documentação do schema input/output")
+    print("   ✅ Type checking em produção")
+    print("   ✅ Prevent runtime errors")
     
     # Save run_id para próxima célula
     model_run_id = run.info.run_id
 
-print(f"\n📊 Input Example (primeiras 3 rows):")
+print("\n📊 Input Example (primeiras 3 rows):")
 display(input_example)
 
 # COMMAND ----------
@@ -434,7 +432,7 @@ print("=" * 60)
 model_name = f"{catalog}.{schema}.churn_model_advanced"
 
 # 1. Registrar modelo como CHALLENGER
-print(f"\n1️⃣ Registrando modelo como CHALLENGER...")
+print("\n1️⃣ Registrando modelo como CHALLENGER...")
 
 model_uri = f"runs:/{model_run_id}/model"
 model_version = mlflow.register_model(
@@ -447,7 +445,7 @@ print(f"   ✅ Modelo registrado: {model_name}")
 print(f"   📊 Version: {model_version.version}")
 
 # 2. Criar alias CHALLENGER
-print(f"\n2️⃣ Criando alias 'challenger'...")
+print("\n2️⃣ Criando alias 'challenger'...")
 client.set_registered_model_alias(
     name=model_name,
     alias="challenger",
@@ -456,7 +454,7 @@ client.set_registered_model_alias(
 print(f"   ✅ Alias 'challenger' criado para version {model_version.version}")
 
 # 3. Comparar com CHAMPION (se existir)
-print(f"\n3️⃣ Comparando CHALLENGER vs CHAMPION...")
+print("\n3️⃣ Comparando CHALLENGER vs CHAMPION...")
 
 try:
     # Tentar pegar champion atual
@@ -464,7 +462,7 @@ try:
     champion_run = mlflow.get_run(champion_version.run_id)
     champion_auc = champion_run.data.metrics.get('auc_roc', 0)
     
-    print(f"   🏆 Champion encontrado:")
+    print("   🏆 Champion encontrado:")
     print(f"      Version: {champion_version.version}")
     print(f"      AUC: {champion_auc:.4f}")
     
@@ -472,7 +470,7 @@ try:
     challenger_run = mlflow.get_run(model_run_id)
     challenger_auc = challenger_run.data.metrics.get('auc_roc', 0)
     
-    print(f"\n   🎯 Challenger (novo):")
+    print("\n   🎯 Challenger (novo):")
     print(f"      Version: {model_version.version}")
     print(f"      AUC: {challenger_auc:.4f}")
     
@@ -494,15 +492,15 @@ try:
         )
         
         print(f"\n   🏆 NOVO CHAMPION: Version {model_version.version}")
-        print(f"   🚀 Modelo promovido automaticamente!")
+        print("   🚀 Modelo promovido automaticamente!")
         
     else:
         print(f"\n   ❌ REJEITAR PROMOÇÃO: Melhoria insuficiente ({improvement:.4f} < {threshold})")
         print(f"   🏆 Champion atual mantido: Version {champion_version.version}")
         
-except Exception as e:
-    print(f"   ⚠️ Champion não existe ainda")
-    print(f"\n   🎯 Promovendo CHALLENGER → CHAMPION (primeiro modelo)")
+except Exception:
+    print("   ⚠️ Champion não existe ainda")
+    print("\n   🎯 Promovendo CHALLENGER → CHAMPION (primeiro modelo)")
     
     # Promover direto se não há champion
     client.set_registered_model_alias(
@@ -513,9 +511,9 @@ except Exception as e:
     
     print(f"   ✅ CHAMPION criado: Version {model_version.version}")
 
-print(f"\n" + "=" * 60)
-print(f"✅ Workflow Champion/Challenger completo!")
-print(f"\n📚 Usar em produção:")
+print("\n" + "=" * 60)
+print("✅ Workflow Champion/Challenger completo!")
+print("\n📚 Usar em produção:")
 print(f"   models:/{model_name}@champion  # Sempre o melhor modelo")
 print(f"   models:/{model_name}@challenger  # Modelo em teste")
 

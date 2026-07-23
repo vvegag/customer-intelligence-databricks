@@ -23,12 +23,7 @@
 
 # DBTITLE 1,Configuração
 # Configurações globais do projeto (inline - sem usar %run)
-import os
-from datetime import datetime, timedelta
-from pyspark.sql import functions as F
 import pandas as pd
-import numpy as np
-import random
 
 # Configurações de catálogo e schema
 CATALOG = "customer_intelligence"
@@ -78,7 +73,6 @@ import mlflow
 import mlflow.sklearn
 from mlflow.models.signature import infer_signature
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import (
@@ -145,7 +139,7 @@ print(f"   Features: {feature_cols[:5]}... (+{len(feature_cols)-5} mais)")
 df_pandas = df_model.select(["customer_id"] + feature_cols + [target_col]).toPandas()
 
 print(f"\nDataset shape: {df_pandas.shape}")
-print(f"\nDistribuição do target:")
+print("\nDistribuição do target:")
 print(df_pandas[target_col].value_counts())
 print(f"\nTaxa de churn: {df_pandas[target_col].mean():.2%}")
 
@@ -171,9 +165,6 @@ print(f"✓ Test set: {X_test.shape}")
 # Treinar modelo e registrar no MLflow (compatível com serverless)
 import mlflow
 import mlflow.sklearn
-from mlflow.models.signature import infer_signature
-import tempfile
-import os
 
 print("Iniciando treino do modelo...")
 
@@ -384,17 +375,17 @@ print(f"\n✓ Predições salvas em: {get_full_table_name(SCHEMA_GOLD, 'churn_pr
 print("\n" + "="*60)
 print("MODELO CHURN - RESUMO COMPLETO")
 print("="*60)
-print(f"\n✅ Modelo treinado: XGBoost Classifier")
+print("\n✅ Modelo treinado: XGBoost Classifier")
 print(f"   - Features: {len(feature_cols)}")
 print(f"   - Train samples: {len(X_train):,}")
 print(f"   - Test samples: {len(X_test):,}")
-print(f"\n✅ Métricas de performance:")
+print("\n✅ Métricas de performance:")
 for metric, value in metrics.items():
     print(f"   - {metric}: {value:.4f}")
-print(f"\n✅ Modelo registrado no Unity Catalog Model Registry:")
+print("\n✅ Modelo registrado no Unity Catalog Model Registry:")
 print(f"   - Registry name: {model_name}@champion")
 print(f"   - Run ID: {run_id}")
-print(f"\n✅ Predições salvas:")
+print("\n✅ Predições salvas:")
 print(f"   - Tabela: {get_full_table_name(SCHEMA_GOLD, 'churn_predictions')}")
 print(f"   - Registros: {len(df_predictions):,}")
 print("\n" + "="*60)

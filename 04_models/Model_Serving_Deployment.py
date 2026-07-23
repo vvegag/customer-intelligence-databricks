@@ -25,10 +25,8 @@
 # DBTITLE 1,Setup e Configuração
 import mlflow
 from mlflow.tracking import MlflowClient
-import pandas as pd
 import json
 import requests
-from pyspark.sql import functions as F
 
 mlflow.set_registry_uri("databricks-uc")
 client = MlflowClient()
@@ -61,8 +59,8 @@ try:
         print(f"  Stage: {latest.current_stage if hasattr(latest, 'current_stage') else 'N/A'}")
 except Exception as e:
     print(f"⚠️  Modelo não encontrado: {e}")
-    print(f"  Será necessário registrar o modelo primeiro")
-    print(f"  Execute o notebook 'Churn Prediction' para treinar e registrar o modelo")
+    print("  Será necessário registrar o modelo primeiro")
+    print("  Execute o notebook 'Churn Prediction' para treinar e registrar o modelo")
 
 # COMMAND ----------
 
@@ -81,7 +79,7 @@ try:
             version=latest_version
         )
         
-        print(f"✓ Modelo promovido para @champion")
+        print("✓ Modelo promovido para @champion")
         print(f"  Versão: {latest_version}")
         print(f"  URI: models:/{model_name}@champion")
         
@@ -129,7 +127,7 @@ try:
     print(f"  State: {existing.state.config_update if existing.state else 'unknown'}")
     print(f"  URL: {existing.config.served_entities[0].entity_name if existing.config else 'N/A'}")
     
-except Exception as e:
+except Exception:
     # Endpoint não existe, criar novo
     print(f"🔧 Criando endpoint '{endpoint_name}'...")
     
@@ -155,20 +153,20 @@ except Exception as e:
             )
         )
         
-        print(f"✓ Endpoint criado com sucesso!")
+        print("✓ Endpoint criado com sucesso!")
         print(f"  Nome: {endpoint_name}")
-        print(f"  Aguarde ~5-10 min para provisionamento...")
-        print(f"\n📌 Para acompanhar status:")
-        print(f"  1. Acesse: ML > Serving Endpoints")
+        print("  Aguarde ~5-10 min para provisionamento...")
+        print("\n📌 Para acompanhar status:")
+        print("  1. Acesse: ML > Serving Endpoints")
         print(f"  2. Clique em '{endpoint_name}'")
-        print(f"  3. Aguarde status 'Ready'")
+        print("  3. Aguarde status 'Ready'")
         
     except Exception as create_error:
         print(f"❌ Erro ao criar endpoint: {create_error}")
-        print(f"\n💡 Possíveis soluções:")
-        print(f"  1. Verifique se o modelo está registrado")
-        print(f"  2. Verifique permissões no Unity Catalog")
-        print(f"  3. Endpoint pode já existir com nome diferente")
+        print("\n💡 Possíveis soluções:")
+        print("  1. Verifique se o modelo está registrado")
+        print("  2. Verifique permissões no Unity Catalog")
+        print("  3. Endpoint pode já existir com nome diferente")
 
 # COMMAND ----------
 
@@ -188,7 +186,7 @@ try:
             print("   Volte em 5-10 minutos e execute esta célula novamente")
     
     # Mostrar URL de invocação
-    print(f"\n🌐 Endpoint URL:")
+    print("\n🌐 Endpoint URL:")
     print(f"   POST https://<workspace-url>/serving-endpoints/{endpoint_name}/invocations")
     
 except Exception as e:
@@ -232,7 +230,6 @@ print(f"\n📝 Features enviadas: {', '.join(feature_cols[:5])}...")
 
 # DBTITLE 1,6️⃣ Invocar Endpoint (Predição Real)
 # Fazer predição via endpoint
-import os
 
 try:
     # Obter URL do workspace
@@ -283,7 +280,7 @@ try:
             print(f"{customer_id:15s} | Risco: {risk_level} | Probabilidade: {churn_prob:.1%}")
         
         print("=" * 70)
-        print(f"\n✓ Endpoint funcionando perfeitamente!")
+        print("\n✓ Endpoint funcionando perfeitamente!")
         print(f"\n📊 Latency: ~{response.elapsed.total_seconds():.2f}s para {len(test_data['data'])} predições")
         
     else:

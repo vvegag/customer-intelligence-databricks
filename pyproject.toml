@@ -1,0 +1,32 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+# 00_setup e 08_dashboards são .ipynb (não .py) e usam células %sql — ruff
+# tenta parsear o SQL como Python e gera ~255 falsos "invalid-syntax". Os
+# testes do projeto (test_notebook_syntax.py) já tratam .ipynb como formato
+# à parte pelo mesmo motivo; ruff segue a mesma convenção aqui.
+extend-exclude = ["*.ipynb"]
+
+# Notebooks são "Databricks source" .py — spark/dbutils/display são globais
+# injetados pelo runtime Databricks, nunca importados. Sem isso, F821 dispara
+# em toda chamada a eles (53 ocorrências confirmadas em 19 arquivos).
+builtins = ["spark", "dbutils", "display"]
+
+[tool.ruff.lint]
+# Escopo deliberadamente pequeno, escolhido depois de rodar ruff de verdade
+# contra o repo (não só por leitura estática): imports não usados, variável
+# não usada, f-string sem placeholder, redefinição não usada. Sem regras de
+# estilo/import-sorting — abrir isso geraria um diff de cleanup gigante em
+# ~20 notebooks sem valor real pra um portfólio.
+#
+# F403/F405 (import * e nomes potencialmente vindos de import *) ficam de
+# fora de propósito: vários notebooks usam `from pyspark.sql.functions import *`
+# de propósito (ver production/feature_store/feature_store_complete.py), e
+# habilitar essas regras geraria ~75 avisos de um padrão que não vamos mudar
+# hoje (trocar por imports explícitos é um refactor maior, fora de escopo).
+#
+# E501 (linha longa) fica de fora de propósito: nem está no select default do
+# ruff, e nesse repo geraria ruído de blocos `# MAGIC %md` (prosa/tabelas/JSON
+# embutido), não sinal real de código.
+select = ["F401", "F541", "F811", "F841", "E9"]

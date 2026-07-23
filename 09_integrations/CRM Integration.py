@@ -35,11 +35,29 @@
 # Databricks notebook source
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import pyspark.sql.functions as F
 from pyspark.sql.types import *
-import base64
 import time
+
+def _retry_request(func, max_attempts=3, base_delay=1.0):
+    """Executa uma chamada requests (func) com retry exponencial (1s, 2s, 4s)
+    em falhas de rede/timeout/5xx/429. Não faz retry em 4xx (exceto 429) —
+    esses são falhas de payload/auth, não transientes."""
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = func()
+            if response.status_code >= 500 or response.status_code == 429:
+                response.raise_for_status()
+            return response
+        except requests.exceptions.RequestException as e:
+            last_exc = e
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                print(f"   ⚠️ Tentativa {attempt}/{max_attempts} falhou ({e}); retry em {delay:.0f}s...")
+                time.sleep(delay)
+    raise last_exc
 
 # Databricks Secrets (create scope first via CLI)
 # dbutils.secrets.createScope(scope="crm_integration")
@@ -112,7 +130,7 @@ class SalesforceIntegration:
                 'password': self.password
             }
             
-            response = requests.post(SALESFORCE_AUTH_URL, data=payload)
+            response = _retry_request(lambda: requests.post(SALESFORCE_AUTH_URL, data=payload))
             response.raise_for_status()
             
             data = response.json()
@@ -135,7 +153,7 @@ class SalesforceIntegration:
         
         if DEMO_MODE:
             print(f"   DEMO: Would send {predictions_df.count()} predictions")
-            print(f"   Sample data:")
+            print("   Sample data:")
             display(predictions_df.limit(5))
             return {'status': 'success', 'records_sent': predictions_df.count()}
         
@@ -165,13 +183,15 @@ class SalesforceIntegration:
             payload = {'records': sf_records}
             
             url = f"{self.instance_url}/services/data/{SALESFORCE_API_VERSION}/composite/sobjects"
-            response = requests.post(url, headers=headers, json=payload)
-            
-            if response.status_code == 200:
-                total_sent += len(batch)
-                print(f"   ✅ Sent batch {i//batch_size + 1}: {len(batch)} records")
-            else:
-                print(f"   ❌ Error in batch {i//batch_size + 1}: {response.text}")
+            try:
+                response = _retry_request(lambda: requests.post(url, headers=headers, json=payload))
+                if response.status_code == 200:
+                    total_sent += len(batch)
+                    print(f"   ✅ Sent batch {i//batch_size + 1}: {len(batch)} records")
+                else:
+                    print(f"   ❌ Error in batch {i//batch_size + 1}: {response.text}")
+            except requests.exceptions.RequestException as e:
+                print(f"   ❌ Batch {i//batch_size + 1} failed after retries: {e}")
         
         print(f"\n✅ Total records sent to Salesforce: {total_sent}")
         return {'status': 'success', 'records_sent': total_sent}
@@ -244,10 +264,10 @@ class HubSpotIntegration:
             }
             
             payload = {'properties': properties}
-            
-            response = requests.post(url, headers=self.headers, json=payload)
+
+            response = _retry_request(lambda: requests.post(url, headers=self.headers, json=payload))
             response.raise_for_status()
-            
+
             result = response.json()
             return {'status': 'success', 'contact_id': result['id']}
             
@@ -263,7 +283,7 @@ class HubSpotIntegration:
         
         if DEMO_MODE:
             print(f"   DEMO: Would update {predictions_df.count()} contacts")
-            print(f"   Sample data:")
+            print("   Sample data:")
             display(predictions_df.limit(5))
             return {'status': 'success', 'contacts_updated': predictions_df.count()}
         
@@ -301,7 +321,7 @@ class HubSpotIntegration:
             payload = {'inputs': inputs}
             
             try:
-                response = requests.post(url, headers=self.headers, json=payload)
+                response = _retry_request(lambda: requests.post(url, headers=self.headers, json=payload))
                 response.raise_for_status()
                 total_updated += len(batch)
                 print(f"   ✅ Updated batch {i//batch_size + 1}: {len(batch)} contacts")
@@ -357,7 +377,7 @@ def trigger_campaign_webhook(customer_id, campaign_type, payload):
     webhook_url = "https://hooks.your-marketing-platform.com/campaign-trigger"
     
     if DEMO_MODE:
-        print(f"\n🔔 DEMO: Webhook trigger")
+        print("\n🔔 DEMO: Webhook trigger")
         print(f"   Campaign: {campaign_type}")
         print(f"   Customer: {customer_id}")
         print(f"   Payload: {json.dumps(payload, indent=2)}")
@@ -376,7 +396,7 @@ def trigger_campaign_webhook(customer_id, campaign_type, payload):
             'data': payload
         }
         
-        response = requests.post(webhook_url, headers=headers, json=webhook_payload, timeout=10)
+        response = _retry_request(lambda: requests.post(webhook_url, headers=headers, json=webhook_payload, timeout=10))
         response.raise_for_status()
         
         print(f"✅ Webhook triggered for customer {customer_id}")

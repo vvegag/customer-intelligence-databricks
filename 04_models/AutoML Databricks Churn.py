@@ -42,7 +42,6 @@
 
 # DBTITLE 1,Setup e Configuração
 # Configs
-from pyspark.sql import functions as F
 import pandas as pd
 
 CATALOG = "customer_intelligence"
@@ -88,10 +87,10 @@ df_automl_final = df_automl.select(
     ["customer_id"] + [f"customer_features.{col}" for col in feature_cols] + ["churn_label"]
 ).withColumnRenamed("churn_label", "will_churn")
 
-print(f"✓ Dataset preparado para AutoML")
+print("✓ Dataset preparado para AutoML")
 print(f"  Linhas: {df_automl_final.count():,}")
 print(f"  Features: {len(feature_cols)}")
-print(f"  Target: will_churn")
+print("  Target: will_churn")
 
 # Visualizar sample
 display(df_automl_final.limit(5))
@@ -145,7 +144,6 @@ manual_metrics = {
     "F1-Score": 0.88
 }
 
-import pandas as pd
 
 if summary is None:
     print("⚠️ AutoML não rodou neste ambiente — sem resultados para comparar.")

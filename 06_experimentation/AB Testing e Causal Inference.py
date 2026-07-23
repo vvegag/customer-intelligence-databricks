@@ -22,9 +22,8 @@
 
 # DBTITLE 1,Configuração
 # Configs inline
-from pyspark.sql import functions as F, Window
+from pyspark.sql import functions as F
 import pandas as pd
-import numpy as np
 from scipy import stats
 
 CATALOG = "customer_intelligence"
@@ -296,7 +295,7 @@ print("="*80)
 print(f"\n✅ Total de campanhas analisadas: {total_campaigns}")
 print(f"   - Estatisticamente significantes: {significant_campaigns} ({significant_campaigns/total_campaigns*100:.1f}%)")
 print(f"   - Com resultado positivo: {positive_campaigns} ({positive_campaigns/total_campaigns*100:.1f}%)")
-print(f"\n✅ Performance financeira:")
+print("\n✅ Performance financeira:")
 print(f"   - Budget total: ${total_budget:,.2f}")
 print(f"   - Receita incremental: ${total_incremental_revenue:,.2f}")
 print(f"   - ROAS geral: {overall_roas:.2f}x")

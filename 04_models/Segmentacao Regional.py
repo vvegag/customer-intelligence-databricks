@@ -94,7 +94,7 @@ df_customer_regiao = df_customers_br.merge(
 
 print(f"✓ Cidade/estado sintético atribuído a {len(df_customer_regiao):,} clientes BR")
 print(f"  (de {df_customers.count():,} clientes totais no catálogo — os demais não são")
-print(f"   country='BR', então essa análise regional não se aplica a eles)")
+print("   country='BR', então essa análise regional não se aplica a eles)")
 df_customer_regiao["cidade"].value_counts().head(10)
 
 # COMMAND ----------
@@ -163,7 +163,7 @@ print("SEGMENTAÇÃO REGIONAL - RESUMO")
 print("="*60)
 print(f"✅ Clientes BR com região atribuída: {len(df_customer_regiao):,}")
 print(f"✅ Cidades de referência: {len(cidades_referencia)}")
-print(f"✅ Cruzamento segmento × PIB regional salvo em customer_regional_segmentation")
+print("✅ Cruzamento segmento × PIB regional salvo em customer_regional_segmentation")
 print("⚠️  Cidade/estado e PIB per capita são sintéticos/ilustrativos nesta demo —")
 print("   ver nota de transparência no topo do notebook.")
 print("="*60)

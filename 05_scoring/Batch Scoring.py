@@ -24,7 +24,6 @@
 
 # DBTITLE 1,Configuração
 # Configs inline
-from pyspark.sql import functions as F
 import pandas as pd
 import mlflow
 import mlflow.sklearn
@@ -129,7 +128,7 @@ df_pandas["score_date"] = pd.Timestamp.now()
 df_pandas["model_version"] = model_version
 
 print("✓ Scores de churn gerados")
-print(f"\nDistribuição de risco:")
+print("\nDistribuição de risco:")
 print(df_pandas["churn_risk_category"].value_counts())
 
 # COMMAND ----------
@@ -178,7 +177,7 @@ df_scores_spark = spark.createDataFrame(df_scores)
 create_or_replace_table(df_scores_spark, SCHEMA_GOLD, "customer_scores")
 
 print(f"✓ Scores salvos: {get_full_table_name(SCHEMA_GOLD, 'customer_scores')}")
-print(f"\nTop 10 clientes de maior risco:")
+print("\nTop 10 clientes de maior risco:")
 print(df_scores.nlargest(10, "churn_probability")[["customer_id", "churn_probability", "churn_risk_category", "customer_value_score"]].to_string(index=False))
 
 # COMMAND ----------
@@ -189,7 +188,7 @@ print("BATCH SCORING - RESUMO")
 print("="*60)
 print(f"\n✅ Modelo: {model_version}")
 print(f"✅ Clientes scored: {len(df_scores):,}")
-print(f"\n✅ Distribuição de risco de churn:")
+print("\n✅ Distribuição de risco de churn:")
 for category in ["Low", "Medium", "High"]:
     count = (df_scores["churn_risk_category"] == category).sum()
     pct = count / len(df_scores) * 100

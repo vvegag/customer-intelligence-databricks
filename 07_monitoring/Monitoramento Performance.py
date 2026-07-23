@@ -21,8 +21,7 @@
 
 # DBTITLE 1,Configuração
 # Configs inline
-from pyspark.sql import functions as F, Window
-import pandas as pd
+from pyspark.sql import functions as F
 
 CATALOG = "customer_intelligence"
 SCHEMA_BRONZE = "bronze"
@@ -51,7 +50,24 @@ warnings.filterwarnings('ignore')
 #   2. Guarde a URL como secret: databricks secrets put-secret customer_intelligence slack_webhook_url
 # Se o secret não existir, o alerta é só impresso no output — não quebra o notebook.
 import json
+import time
+import urllib.error
 import urllib.request
+
+def _retry_with_backoff(func, max_attempts=3, base_delay=1.0):
+    """Executa func() com retry exponencial (1s, 2s, 4s) em falhas de rede.
+    Repassa a última exceção se todas as tentativas falharem."""
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return func()
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_exc = e
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                print(f"   ⚠️ Tentativa {attempt}/{max_attempts} falhou ({e}); retry em {delay:.0f}s...")
+                time.sleep(delay)
+    raise last_exc
 
 def send_slack_alert(message: str) -> bool:
     """Envia uma mensagem para o Slack via Incoming Webhook, se configurado.
@@ -65,11 +81,11 @@ def send_slack_alert(message: str) -> bool:
     payload = json.dumps({"text": message}).encode("utf-8")
     req = urllib.request.Request(webhook_url, data=payload, headers={"Content-Type": "application/json"})
     try:
-        urllib.request.urlopen(req, timeout=10)
+        _retry_with_backoff(lambda: urllib.request.urlopen(req, timeout=10))
         print(f"✓ Alerta enviado ao Slack: {message[:80]}...")
         return True
     except Exception as e:
-        print(f"⚠️ Falha ao enviar alerta ao Slack: {e}\n   Mensagem: {message}")
+        print(f"⚠️ Falha ao enviar alerta ao Slack após retries: {e}\n   Mensagem: {message}")
         return False
 
 print("✓ Configuração carregada")

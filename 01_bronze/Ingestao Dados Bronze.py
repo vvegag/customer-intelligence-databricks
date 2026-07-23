@@ -22,7 +22,6 @@
 
 # DBTITLE 1,Configuração
 # Configurações globais do projeto (inline - sem usar %run)
-import os
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd

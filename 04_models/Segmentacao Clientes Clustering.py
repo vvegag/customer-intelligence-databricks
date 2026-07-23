@@ -19,8 +19,6 @@
 # DBTITLE 1,Setup
 # Configurações inline
 from pyspark.sql import functions as F
-import pandas as pd
-import numpy as np
 
 CATALOG = "customer_intelligence"
 SCHEMA_BRONZE = "bronze"
@@ -45,6 +43,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import warnings
 warnings.filterwarnings('ignore')
+
+import mlflow
+import mlflow.sklearn
+from mlflow.tracking import MlflowClient
+from mlflow.models.signature import infer_signature
+
+mlflow.set_registry_uri("databricks-uc")
 
 print("✓ Setup OK")
 print(f"  Catalog: {CATALOG}")
@@ -98,12 +103,44 @@ print(f"\n✓ K escolhido: {optimal_k}")
 # COMMAND ----------
 
 # DBTITLE 1,Treinar K-Means
-# Treinar modelo final
-kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
-df_pandas["cluster"] = kmeans.fit_predict(X_scaled)
+# Registro no Unity Catalog Model Registry, mesmo padrão de Modelo Propensity
+# Score.py: nome de 3 níveis + alias champion/challenger. Métrica de
+# comparação aqui é inertia_ (não tem AUC/precision — clustering não tem
+# label supervisionado).
+model_name = f"{CATALOG}.{SCHEMA_GOLD}.clustering_model"
 
-print(f"\n✓ Clustering completo")
-print(f"\nDistribuição de clusters:")
+with mlflow.start_run(run_name="clustering_kmeans_v1") as run:
+    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+    df_pandas["cluster"] = kmeans.fit_predict(X_scaled)
+
+    mlflow.log_params({"n_clusters": optimal_k, "n_init": 10, "random_state": 42})
+    mlflow.log_metric("inertia", kmeans.inertia_)
+
+    # LIMITAÇÃO CONHECIDA: o StandardScaler treinado acima não é empacotado
+    # junto do modelo — quem for servir isso em produção precisa reaplicar o
+    # mesmo scaler antes de chamar .predict(). Não construímos um
+    # sklearn.Pipeline(scaler, kmeans) aqui pra manter o escopo pequeno.
+    signature = infer_signature(X_scaled, kmeans.labels_)
+    model_info = mlflow.sklearn.log_model(
+        kmeans, "model",
+        signature=signature,
+        input_example=X_scaled[:5],
+        registered_model_name=model_name
+    )
+
+client = MlflowClient()
+try:
+    current_champion = client.get_model_version_by_alias(model_name, "champion")
+    client.set_registered_model_alias(model_name, "challenger", current_champion.version)
+    print(f"✓ Champion anterior (v{current_champion.version}) rebaixado para challenger")
+except Exception:
+    print("ℹ️ Primeira execução — ainda não existia um champion registrado")
+
+client.set_registered_model_alias(model_name, "champion", model_info.registered_model_version)
+print(f"✓ Modelo registrado: {model_name}@champion (v{model_info.registered_model_version})")
+
+print("\n✓ Clustering completo")
+print("\nDistribuição de clusters:")
 print(df_pandas["cluster"].value_counts().sort_index())
 
 # COMMAND ----------
@@ -145,7 +182,7 @@ df_segments_spark = spark.createDataFrame(df_segments)
 create_or_replace_table(df_segments_spark, SCHEMA_GOLD, "customer_segments")
 
 print(f"\n✓ Segmentos salvos: {get_full_table_name(SCHEMA_GOLD, 'customer_segments')}")
-print(f"\nResumo:")
+print("\nResumo:")
 print(f"  - Total clientes: {len(df_segments):,}")
 print(f"  - Número de segmentos: {optimal_k}")
 print(f"  - Features usadas: {', '.join(cluster_features)}")

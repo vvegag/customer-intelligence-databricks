@@ -25,11 +25,8 @@
 
 # DBTITLE 1,Setup
 # Configurações globais do projeto (inline)
-import os
-from datetime import datetime, timedelta
 from pyspark.sql import functions as F
 import pandas as pd
-import numpy as np
 
 # Configs
 CATALOG = "customer_intelligence"
@@ -206,5 +203,5 @@ df_scores_spark = spark.createDataFrame(df_scores)
 create_or_replace_table(df_scores_spark, SCHEMA_GOLD, "propensity_scores")
 
 print(f"\n✓ Scores salvos: {get_full_table_name(SCHEMA_GOLD, 'propensity_scores')}")
-print(f"\nDistribuição:")
+print("\nDistribuição:")
 print(df_scores["propensity_category"].value_counts())

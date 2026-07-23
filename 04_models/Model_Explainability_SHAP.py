@@ -37,7 +37,6 @@ import mlflow
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from pyspark.sql import functions as F
 
 # Configurar matplotlib para notebooks
 import warnings
@@ -171,7 +170,7 @@ high_risk_idx = predictions.argmax()  # cliente com maior risco
 
 print(f"Cliente de MAIOR risco: índice {high_risk_idx}")
 print(f"Probabilidade de churn: {predictions[high_risk_idx]:.1%}")
-print(f"\nFeatures deste cliente:")
+print("\nFeatures deste cliente:")
 for col in feature_cols[:5]:
     print(f"  {col}: {X_explain.iloc[high_risk_idx][col]:.2f}")
 

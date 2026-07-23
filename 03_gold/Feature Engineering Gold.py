@@ -21,13 +21,9 @@
 
 # DBTITLE 1,Configuração
 # Configurações globais do projeto (inline - sem usar %run)
-import os
-from datetime import datetime, timedelta
-import numpy as np
-import pandas as pd
-from pyspark.sql import functions as F, Window
+from datetime import timedelta
+from pyspark.sql import functions as F
 from pyspark.sql.types import *
-import random
 
 # Configurações de catálogo e schema
 CATALOG = "customer_intelligence"
