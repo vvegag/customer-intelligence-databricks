@@ -54,7 +54,7 @@ customer-intelligence-databricks/
 │   ├── Modelo Churn Prediction.py             # XGBoost + MLflow (fluxo principal)
 │   ├── Modelo Propensity Score.py             # Probabilidade de compra
 │   ├── Segmentacao Clientes Clustering.py     # K-Means (5 segmentos)
-│   ├── Segmentacao Regional - Hiperregionalizacao.py  # Segmento × PIB regional (dado ilustrativo)
+│   ├── Segmentacao Regional.py                # Cruzamento RFM × PIB regional (dado ilustrativo)
 │   ├── Sistema Recomendacao.py                # Next best action (híbrido + cold-start)
 │   ├── Ativacao Saldo Dormente.py             # Priorização por valor em risco não resgatado
 │   ├── Forecast GMV e Resgates.py             # Prophet: forecast semanal de resgate

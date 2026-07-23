@@ -1,15 +1,15 @@
 # Databricks notebook source
-# DBTITLE 1,Segmentação Regional — Hiperpersonalização
+# DBTITLE 1,Segmentação Regional
 # MAGIC %md
-# MAGIC # Segmentação Regional — Hiperpersonalização 🗺️
+# MAGIC # Segmentação Regional 🗺️
 # MAGIC
 # MAGIC ## Objetivo
-# MAGIC Cruzar a segmentação comportamental (RFM/K-Means, `Segmentacao Clientes
-# MAGIC Clustering.py`) com uma dimensão **geográfica**, no mesmo espírito de um case real
-# MAGIC que já fiz: comparar poder aquisitivo por cidade (PIB per capita, dado do IBGE) pra
-# MAGIC mostrar que "cidade pequena" não é sinônimo de "cliente de baixo valor" — uma
-# MAGIC cidade pequena e rica pode ter potencial de compra maior que um bairro populoso de
-# MAGIC uma capital.
+# MAGIC **Cruzamento de segmento RFM × PIB per capita regional**: cruzar a segmentação
+# MAGIC comportamental (RFM/K-Means, `Segmentacao Clientes Clustering.py`) com uma
+# MAGIC dimensão **geográfica**, no mesmo espírito de um case real que já fiz: comparar
+# MAGIC poder aquisitivo por cidade (PIB per capita, dado do IBGE) pra mostrar que "cidade
+# MAGIC pequena" não é sinônimo de "cliente de baixo valor" — uma cidade pequena e rica
+# MAGIC pode ter potencial de compra maior que um bairro populoso de uma capital.
 # MAGIC
 # MAGIC ## Nota de transparência sobre os dados desta seção
 # MAGIC Diferente do resto do projeto, aqui eu **não tenho** a planilha original do IBGE
@@ -120,7 +120,7 @@ print(f"✓ {len(df_regional):,} clientes com segmento + região cruzados")
 
 # COMMAND ----------
 
-# DBTITLE 1,3. Hiperpersonalização: segmento × tier de PIB regional
+# DBTITLE 1,3. Cruzamento: segmento × tier de PIB regional
 cruzamento = df_regional.groupby(["segment_name", "tier_pib"], observed=True).agg(
     n_clientes=("customer_id", "count"),
     monetary_medio=("monetary_total", "mean"),
