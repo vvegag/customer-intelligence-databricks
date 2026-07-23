@@ -16,7 +16,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Instalar Dependências
-# MAGIC %pip install xgboost scikit-learn --quiet
+# MAGIC %pip install xgboost lightgbm scikit-learn --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -80,6 +80,7 @@ from mlflow.models.signature import infer_signature
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 from sklearn.metrics import (
     roc_auc_score, accuracy_score, precision_score, 
     recall_score, f1_score, classification_report, confusion_matrix
@@ -218,6 +219,55 @@ print("\n" + "="*60)
 print("TOP 10 FEATURES MAIS IMPORTANTES")
 print("="*60)
 print(feature_importance.head(10).to_string(index=False))
+
+# COMMAND ----------
+
+# DBTITLE 1,3.1 Comparação com LightGBM
+# Comparação exploratória: mesmo split, mesmos hiperparâmetros equivalentes,
+# outro algoritmo de gradient boosting. O modelo registrado no Model Registry
+# continua sendo o XGBoost acima — isso aqui é só benchmark/curiosidade, não
+# promove o LightGBM a lugar nenhum. Como o dataset é sintético, "quem ganhou"
+# não prova nada sobre o mundo real — o valor está em saber comparar com
+# rigor, não na conclusão em si.
+print("\nTreinando modelo LightGBM (comparação)...")
+lgbm_params = {
+    "n_estimators": 100,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42,
+    "verbose": -1
+}
+model_lgbm = LGBMClassifier(**lgbm_params)
+model_lgbm.fit(X_train, y_train)
+
+y_pred_lgbm = model_lgbm.predict(X_test)
+y_pred_proba_lgbm = model_lgbm.predict_proba(X_test)[:, 1]
+
+metrics_lgbm = {
+    "auc_roc": roc_auc_score(y_test, y_pred_proba_lgbm),
+    "accuracy": accuracy_score(y_test, y_pred_lgbm),
+    "precision": precision_score(y_test, y_pred_lgbm),
+    "recall": recall_score(y_test, y_pred_lgbm),
+    "f1_score": f1_score(y_test, y_pred_lgbm)
+}
+
+comparison_df = pd.DataFrame({
+    "Métrica": list(metrics.keys()),
+    "XGBoost (champion)": list(metrics.values()),
+    "LightGBM (comparação)": list(metrics_lgbm.values())
+})
+comparison_df["Diferença"] = comparison_df["LightGBM (comparação)"] - comparison_df["XGBoost (champion)"]
+
+print("\n" + "="*60)
+print("XGBOOST vs LIGHTGBM")
+print("="*60)
+print(comparison_df.to_string(index=False))
+print("\n⚠️ Dataset sintético: diferença de performance aqui não generaliza para")
+print("   dados reais — o objetivo é demonstrar comparação rigorosa entre algoritmos.")
+
+# COMMAND ----------
 
 # Criar signature do modelo
 signature = infer_signature(X_train, model.predict_proba(X_train))
