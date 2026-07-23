@@ -89,3 +89,150 @@ resources:
             spark_version: "14.3.x-ml-scala2.12"
             node_type_id: "i3.xlarge"
             num_workers: 1
+
+    # JOB: Main Pipeline (Bronze -> Silver -> Gold -> Models -> Scoring -> Monitoring)
+    # Orquestra o fluxo narrativo principal (pastas 01_bronze a 07_monitoring), que
+    # até aqui só rodava manualmente clicando notebook por notebook.
+    #
+    # AVISO CONHECIDO: nenhum notebook do fluxo principal lê dbutils.widgets /
+    # base_parameters (todos têm CATALOG = "customer_intelligence" hardcoded na
+    # célula de config). Isso significa que rodar este job sob o target "dev" NÃO
+    # isola de fato o catálogo (a variável catalog: customer_intelligence_dev do
+    # target dev fica sem efeito aqui) — o job escreve no catálogo de produção
+    # mesmo sob "dev". Corrigir isso exigiria parametrizar a célula de config
+    # duplicada em ~12 notebooks; fica registrado como limitação conhecida, não
+    # corrigida nesta rodada.
+    main_pipeline:
+      name: "[${bundle.target}] Main Pipeline (Bronze a Monitoring)"
+
+      schedule:
+        quartz_cron_expression: "0 0 4 ? * MON"  # Semanal, segunda 4h (2h após ml_training_pipeline, evita disputa de cluster)
+        timezone_id: "America/Sao_Paulo"
+
+      tasks:
+        - task_key: bronze_ingestion
+          notebook_task:
+            notebook_path: "./01_bronze/Ingestao Dados Bronze.py"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: silver_transformation
+          depends_on:
+            - task_key: bronze_ingestion
+          notebook_task:
+            notebook_path: "./02_silver/Transformacao Silver.py"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: gold_feature_engineering
+          depends_on:
+            - task_key: silver_transformation
+          notebook_task:
+            notebook_path: "./03_gold/Feature Engineering Gold.py"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        # --- fan-out: dependem só de gold_feature_engineering ---
+        - task_key: model_churn_prediction
+          depends_on:
+            - task_key: gold_feature_engineering
+          notebook_task:
+            notebook_path: "./04_models/Modelo Churn Prediction.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: model_propensity_score
+          depends_on:
+            - task_key: gold_feature_engineering
+          notebook_task:
+            notebook_path: "./04_models/Modelo Propensity Score.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: model_segmentacao_clustering
+          depends_on:
+            - task_key: gold_feature_engineering
+          notebook_task:
+            notebook_path: "./04_models/Segmentacao Clientes Clustering.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: model_ativacao_saldo_dormente
+          depends_on:
+            - task_key: gold_feature_engineering
+          notebook_task:
+            notebook_path: "./04_models/Ativacao Saldo Dormente.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: model_forecast_gmv
+          depends_on:
+            - task_key: gold_feature_engineering
+          notebook_task:
+            notebook_path: "./04_models/Forecast GMV e Resgates.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 1  # Prophet é single-node, mais workers não ajuda
+
+        # --- dependem de gold.customer_segments (saída de model_segmentacao_clustering) ---
+        - task_key: model_segmentacao_regional
+          depends_on:
+            - task_key: model_segmentacao_clustering
+          notebook_task:
+            notebook_path: "./04_models/Segmentacao Regional.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        - task_key: model_sistema_recomendacao
+          depends_on:
+            - task_key: model_segmentacao_clustering
+          notebook_task:
+            notebook_path: "./04_models/Sistema Recomendacao.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        # --- depende do modelo de Churn já ter registrado o alias @champion ---
+        - task_key: batch_scoring
+          depends_on:
+            - task_key: model_churn_prediction
+          notebook_task:
+            notebook_path: "./05_scoring/Batch Scoring.py"
+          new_cluster:
+            spark_version: "14.3.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}
+
+        # --- último: aguarda todo o resto ---
+        - task_key: monitoring_performance
+          depends_on:
+            - task_key: model_propensity_score
+            - task_key: model_ativacao_saldo_dormente
+            - task_key: model_forecast_gmv
+            - task_key: model_segmentacao_regional
+            - task_key: model_sistema_recomendacao
+            - task_key: batch_scoring
+          notebook_task:
+            notebook_path: "./07_monitoring/Monitoramento Performance.py"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: ${var.num_workers}

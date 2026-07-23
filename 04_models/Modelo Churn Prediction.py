@@ -137,7 +137,11 @@ print(f"   Features: {feature_cols[:5]}... (+{len(feature_cols)-5} mais)")
 # COMMAND ----------
 
 # DBTITLE 1,2. Preparar Dataset para Treino
-# Converter para Pandas
+# Converter para Pandas — traz os dados pro driver, teto real de escala (hoje
+# trivial com N=10k clientes). Quando isso deixar de caber num único node, o
+# caminho de migração é o treino distribuído já demonstrado em
+# production/models/sparkml_distributed.py (SparkML nativo, sem trazer nada
+# pro driver), não paralelizar manualmente scikit-learn/XGBoost aqui.
 df_pandas = df_model.select(["customer_id"] + feature_cols + [target_col]).toPandas()
 
 print(f"\nDataset shape: {df_pandas.shape}")

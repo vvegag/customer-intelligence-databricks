@@ -63,6 +63,9 @@ cluster_features = [
     "customer_lifetime_days"
 ]
 
+# .toPandas() traz pro driver — trivial em N=10k, mas é o teto de escala deste
+# notebook (scikit-learn KMeans é single-node por natureza). Pra clustering
+# distribuído de verdade, ver production/models/sparkml_distributed.py.
 df_pandas = df_features.select(["customer_id"] + cluster_features).fillna(0).toPandas()
 X = df_pandas[cluster_features]
 

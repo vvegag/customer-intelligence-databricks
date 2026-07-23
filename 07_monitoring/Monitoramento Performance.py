@@ -225,6 +225,45 @@ print("\n✓ KPIs salvos para monitoramento")
 
 # COMMAND ----------
 
+# DBTITLE 1,5. Delta Maintenance (OPTIMIZE / ZORDER / VACUUM)
+# As tabelas Gold que mais sofrem leitura repetida por outros notebooks
+# (customer_features é lida por praticamente todo 04_models; churn_predictions
+# e customer_scores são lidas por Monitoring e por qualquer análise de risco)
+# nunca recebem manutenção — sem isso, updates sucessivos (overwrite completo,
+# ver create_or_replace_table) acumulam arquivos pequenos e degradam leitura ao
+# longo do tempo. ZORDER em customer_id porque é a chave de join mais comum
+# entre os notebooks consumidores dessas tabelas.
+DELTA_MAINTENANCE_TABLES = [
+    ("customer_features", "customer_id"),
+    ("churn_predictions", "customer_id"),
+    ("customer_scores", "customer_id"),
+]
+
+print("="*60)
+print("DELTA MAINTENANCE")
+print("="*60)
+
+for table_name, zorder_col in DELTA_MAINTENANCE_TABLES:
+    full_name = get_full_table_name(SCHEMA_GOLD, table_name)
+    try:
+        spark.sql(f"OPTIMIZE {full_name} ZORDER BY ({zorder_col})")
+        print(f"  ✓ OPTIMIZE + ZORDER BY ({zorder_col}): {full_name}")
+    except Exception as e:
+        print(f"  ⚠️ OPTIMIZE falhou em {full_name}: {e}")
+        continue
+
+    try:
+        # Retenção padrão de 7 dias (168h) — não usa RETAIN 0 HOURS, que
+        # desabilita o proteção de time-travel/leitura concorrente do Delta.
+        spark.sql(f"VACUUM {full_name} RETAIN 168 HOURS")
+        print(f"  ✓ VACUUM (retenção 7 dias): {full_name}")
+    except Exception as e:
+        print(f"  ⚠️ VACUUM falhou em {full_name}: {e}")
+
+print("\n✓ Delta Maintenance completo")
+
+# COMMAND ----------
+
 # DBTITLE 1,Resumo de Monitoramento
 print("\n" + "="*80)
 print("RESUMO DE MONITORAMENTO")
@@ -237,6 +276,8 @@ print("\n✅ Tendências de campanha atualizadas")
 print("   - Performance mensal calculada")
 print("\n✅ KPIs de negócio atualizados")
 print("   - Snapshot salvo para histórico")
+print("\n✅ Delta Maintenance executado")
+print("   - OPTIMIZE + ZORDER + VACUUM nas tabelas Gold mais consultadas")
 print("\n" + "="*80)
 print("✓ MONITORAMENTO COMPLETO")
 print("="*80)

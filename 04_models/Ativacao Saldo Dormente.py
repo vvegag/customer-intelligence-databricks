@@ -153,6 +153,8 @@ feature_cols = [
     "saldo_dormente", "dias_desde_ultimo_resgate"
 ]
 
+# .toPandas() traz pro driver — trivial em N=10k, mas é o teto de escala deste
+# notebook. Ver production/models/sparkml_distributed.py pro caminho distribuído.
 df_pandas = df_model_data.select(["customer_id"] + feature_cols + ["resgatou_ultimos_30d"]).fillna(0).toPandas()
 X = df_pandas[feature_cols]
 y = df_pandas["resgatou_ultimos_30d"]

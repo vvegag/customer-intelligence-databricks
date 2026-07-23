@@ -331,4 +331,56 @@ print("="*60)
 
 # COMMAND ----------
 
+# DBTITLE 1,Data Quality Gate - Gold
+# customer_features e churn_labels partem de silver.customers com apenas LEFT
+# JOINs/select (ver células "4. Customer Master Features" e "5. Criar Target
+# para Churn" acima) — nenhuma delas filtra nem faz join que multiplique
+# linhas, então o row count deve bater EXATAMENTE com silver.customers.
+# Qualquer divergência aqui indica um join que virou inner por engano, ou uma
+# chave duplicada gerando fan-out. Levanta erro de propósito (mesmo raciocínio
+# do gate de Silver): um gate que só avisa é o mesmo que não ter gate.
+
+silver_customers_count = spark.table(get_full_table_name(SCHEMA_SILVER, "customers")).count()
+
+# (gold_table, expected_count)
+GOLD_EXACT_MATCH_CHECKS = [
+    ("customer_features", silver_customers_count),
+    ("churn_labels", silver_customers_count),
+]
+
+# (gold_table, critical_column)
+GOLD_NULL_CHECKS = [
+    ("customer_features", "customer_id"),
+    ("churn_labels", "customer_id"),
+    ("churn_labels", "churn_label"),
+]
+
+print("="*60)
+print("DATA QUALITY GATE - GOLD")
+print("="*60)
+
+dq_errors = []
+
+for gold_tbl, expected_count in GOLD_EXACT_MATCH_CHECKS:
+    actual_count = spark.table(get_full_table_name(SCHEMA_GOLD, gold_tbl)).count()
+    status = "OK" if actual_count == expected_count else "FALHOU"
+    print(f"  [{status}] {gold_tbl}: {actual_count:,} (esperado exatamente {expected_count:,})")
+    if actual_count != expected_count:
+        dq_errors.append(f"{gold_tbl}: {actual_count:,} linhas, esperado {expected_count:,} (== silver.customers)")
+
+for gold_tbl, col in GOLD_NULL_CHECKS:
+    null_count = spark.table(get_full_table_name(SCHEMA_GOLD, gold_tbl)).filter(F.col(col).isNull()).count()
+    status = "OK" if null_count == 0 else "FALHOU"
+    print(f"  [{status}] {gold_tbl}.{col}: {null_count} nulos (esperado 0)")
+    if null_count > 0:
+        dq_errors.append(f"{gold_tbl}.{col}: {null_count} valores nulos em coluna crítica")
+
+if dq_errors:
+    raise ValueError(
+        "Data Quality Gate (Gold) falhou:\n" + "\n".join(f"  - {e}" for e in dq_errors)
+    )
+print("\n✓ Data Quality Gate (Gold) passou")
+
+# COMMAND ----------
+
 

@@ -257,4 +257,66 @@ print("="*60)
 
 # COMMAND ----------
 
+# DBTITLE 1,Data Quality Gate - Silver
+# Reconciliação de row-count Bronze -> Silver e checagem de nulos em colunas
+# críticas. Tolerâncias refletem o comportamento esperado de cada transformação
+# (ex: filtro de status="Completed" em transactions descarta ~40% por desenho,
+# não é bug) — não é um número arbitrário. Levanta erro de propósito: um gate
+# que só imprime warning é indistinguível de não fazer nada quando ninguém está
+# olhando o output do job.
+
+# (bronze_table, silver_table, min_retention_pct, max_retention_pct)
+SILVER_RECONCILIATION = [
+    ("customers_raw", "customers", 0.99, 1.00),
+    ("products_raw", "products", 0.99, 1.00),
+    ("transactions_raw", "transactions", 0.50, 0.70),  # filtro status == "Completed"
+    ("campaigns_raw", "campaigns", 0.99, 1.00),
+    ("campaign_exposures_raw", "campaign_exposures", 0.99, 1.00),
+    ("campaign_responses_raw", "campaign_responses", 0.99, 1.00),
+    ("behavioral_events_raw", "behavioral_events", 0.99, 1.00),
+]
+
+# (silver_table, critical_column)
+SILVER_NULL_CHECKS = [
+    ("customers", "customer_id"),
+    ("products", "product_id"),
+    ("transactions", "transaction_id"),
+    ("transactions", "customer_id"),
+    ("campaign_exposures", "customer_id"),
+    ("behavioral_events", "customer_id"),
+]
+
+print("="*60)
+print("DATA QUALITY GATE - SILVER")
+print("="*60)
+
+dq_errors = []
+
+for bronze_tbl, silver_tbl, min_pct, max_pct in SILVER_RECONCILIATION:
+    bronze_count = spark.table(get_full_table_name(SCHEMA_BRONZE, bronze_tbl)).count()
+    silver_count = spark.table(get_full_table_name(SCHEMA_SILVER, silver_tbl)).count()
+    retention = silver_count / bronze_count if bronze_count else 0
+    status = "OK" if min_pct <= retention <= max_pct else "FALHOU"
+    print(f"  [{status}] {silver_tbl}: bronze={bronze_count:,} silver={silver_count:,} "
+          f"retention={retention:.1%} (esperado {min_pct:.0%}-{max_pct:.0%})")
+    if not (min_pct <= retention <= max_pct):
+        dq_errors.append(
+            f"{silver_tbl}: retenção {retention:.1%} fora do esperado ({min_pct:.0%}-{max_pct:.0%})"
+        )
+
+for silver_tbl, col in SILVER_NULL_CHECKS:
+    null_count = spark.table(get_full_table_name(SCHEMA_SILVER, silver_tbl)).filter(F.col(col).isNull()).count()
+    status = "OK" if null_count == 0 else "FALHOU"
+    print(f"  [{status}] {silver_tbl}.{col}: {null_count} nulos (esperado 0)")
+    if null_count > 0:
+        dq_errors.append(f"{silver_tbl}.{col}: {null_count} valores nulos em coluna crítica")
+
+if dq_errors:
+    raise ValueError(
+        "Data Quality Gate (Silver) falhou:\n" + "\n".join(f"  - {e}" for e in dq_errors)
+    )
+print("\n✓ Data Quality Gate (Silver) passou")
+
+# COMMAND ----------
+
 

@@ -1,6 +1,8 @@
-# 📚 Guia dos Notebooks Production-Ready
+# 📚 Guia dos Notebooks
 
-Este documento consolida o guia rápido e a estrutura detalhada dos 5 notebooks production .
+Este documento consolida o guia rápido e a estrutura detalhada de todos os notebooks
+do projeto: o fluxo principal (`00_setup` a `10_governance`, ~20 notebooks) e os
+5 notebooks avançados/opcionais em `production/`.
 
 ---
 
@@ -47,35 +49,92 @@ Tempo: ~3 minutos
 
 ---
 
-## 🤖 Modelos de ML (Escolha o Que Quiser)
+## 🤖 Modelos de ML (04_models/)
 
-### Opção A: Churn Prediction
+Todos independentes entre si (exceto onde marcado), rodáveis em qualquer ordem
+depois do Gold. Ordem sugerida no job orquestrado (`main_pipeline` no
+`databricks.yml`): Churn primeiro (é dependência de Batch Scoring, SHAP e
+Model Serving), depois o resto em paralelo.
+
+### Churn Prediction
 ```bash
 Abra: 04_models/Modelo Churn Prediction
 Clique: Run All
 Tempo: ~4 minutos
-Output: Modelo com AUC 0.85+, registrado no MLflow
+Output: XGBoost + comparação com LightGBM, registrado como
+        customer_intelligence.gold.churn_model@champion
 ```
 
-### Opção B: Propensity Score
+### Propensity Score
 ```bash
 Abra: 04_models/Modelo Propensity Score
 Clique: Run All
 Tempo: ~3 minutos
-Output: Scores de propensão para toda base
+Output: Scores de propensão de compra para toda a base
 ```
 
-### Opção C: Segmentação
+### Segmentação de Clientes (Clustering)
 ```bash
 Abra: 04_models/Segmentacao Clientes Clustering
 Clique: Run All
 Tempo: ~3 minutos
-Output: 5 segmentos comportamentais
+Output: 5 segmentos comportamentais (K-Means + RFM)
 ```
 > 💡 A tabela `customer_segments` é criada independente de qualquer outra coisa.
 > A última célula ("Insights por Segmento") cruza os segmentos com o risco de
 > churn — para ela mostrar esse cruzamento, rode `05_scoring/Batch Scoring`
 > antes. Se ainda não rodou, a célula avisa e segue sem quebrar o notebook.
+
+### Segmentação Regional
+```bash
+Abra: 04_models/Segmentacao Regional
+Clique: Run All
+Tempo: ~2 minutos
+Pré-requisito: Segmentacao Clientes Clustering (lê gold.customer_segments)
+Output: Cruzamento de segmento RFM × PIB per capita regional (dado ilustrativo)
+```
+
+### Sistema de Recomendação
+```bash
+Abra: 04_models/Sistema Recomendacao
+Clique: Run All
+Tempo: ~3 minutos
+Pré-requisito: Segmentacao Clientes Clustering (lê gold.customer_segments)
+Output: Next Best Product (híbrido com fallback de cold-start),
+        Next Best Action e Collaborative Filtering
+```
+
+### Ativação de Saldo Dormente
+```bash
+Abra: 04_models/Ativacao Saldo Dormente
+Clique: Run All
+Tempo: ~3 minutos
+Output: Priorização de clientes por valor em risco de nunca ser resgatado
+```
+
+### Forecast GMV e Resgates
+```bash
+Abra: 04_models/Forecast GMV e Resgates
+Clique: Run All
+Tempo: ~2 minutos
+Output: Forecast semanal de resgate (Prophet) com validação em holdout
+```
+
+### AutoML Databricks Churn
+```bash
+Abra: 04_models/AutoML Databricks Churn
+Clique: Run All
+Tempo: ~1 minuto
+Output: Comparação com Databricks AutoML (cai num fallback documentado se
+        AutoML não estiver disponível no seu tier de conta)
+```
+
+### Explicabilidade e Deploy do Modelo de Churn
+```bash
+Abra: 04_models/Model_Explainability_SHAP        (requer Churn já treinado)
+Abra: 04_models/Model_Serving_Deployment          (requer Churn já treinado)
+Abra: 04_models/Automated Model Retraining        (requer Monitoramento já rodado 1x)
+```
 
 ---
 
@@ -87,6 +146,16 @@ Abra: 06_experimentation/AB Testing e Causal Inference
 Clique: Run All
 Tempo: ~4 minutos
 Output: Lift, ROAS, significância por campanha
+```
+
+### Multi-Armed Bandit — Thompson Sampling
+```bash
+Abra: 06_experimentation/Multi-Armed Bandit - Thompson Sampling
+Clique: Run All
+Tempo: ~2 minutos
+Output: Alocação dinâmica de tráfego (vs. A/B estático) — parte 1 usa os braços
+        reais controle/tratamento do projeto, parte 2 é uma simulação didática
+        multi-braço claramente rotulada como sintética
 ```
 
 ### Scoring em Lote
@@ -128,28 +197,45 @@ Crie visualizações
 
 ## 🔄 Fluxo Completo End-to-End
 
-Para executar TODO o pipeline de uma vez:
+Duas formas de rodar o pipeline principal de ponta a ponta:
 
+### Manual (clicando notebook por notebook)
 ```
-1. Setup                    (2 min)   ✅
+1. Setup                                       ✅
    ↓
-2. Bronze Ingestion         (3 min)   ✅
+2. Bronze Ingestion                            ✅
    ↓
-3. Silver Transformation    (2 min)   ✅
+3. Silver Transformation (+ Data Quality Gate) ✅
    ↓
-4. Gold Features            (3 min)   ✅
+4. Gold Features (+ Data Quality Gate)         ✅
    ↓
-5. Churn Model              (4 min)   ✅
+5. Modelos (fan-out, qualquer ordem):
+   Churn · Propensity · Segmentação · Segmentação Regional ·
+   Recomendação · Ativação Saldo Dormente · Forecast GMV
    ↓
-6. Batch Scoring            (3 min)   ✅
+6. Batch Scoring        (requer Churn já treinado)
    ↓
-7. A/B Testing              (4 min)   ✅
+7. A/B Testing / Thompson Sampling (independentes, qualquer momento)
    ↓
-8. Monitoring               (2 min)   ✅
+8. Monitoring (+ Delta Maintenance: OPTIMIZE/ZORDER/VACUUM)
+```
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TEMPO TOTAL: ~23 minutos
+### Orquestrado (job `main_pipeline` no Databricks Workflows)
+O `databricks.yml` define o job `main_pipeline`, que modela exatamente esse
+grafo de dependências (bronze→silver→gold serial, depois fan-out dos modelos,
+Batch Scoring esperando o Churn, Monitoring por último) e roda semanalmente:
+
+```bash
+databricks bundle deploy --target dev --profile <seu-profile>
+databricks bundle run main_pipeline --target dev --profile <seu-profile>
 ```
+
+> ⚠️ Nenhum notebook do fluxo principal lê `dbutils.widgets`/`base_parameters`
+> — o `CATALOG` é fixo (`customer_intelligence`) na célula de config de cada
+> notebook. Isso significa que rodar `main_pipeline` sob o target `dev` **não
+> isola** o catálogo (a variável `catalog: customer_intelligence_dev` do
+> target `dev` não tem efeito nesse job específico) — ele escreve no catálogo
+> de produção mesmo assim. É uma limitação conhecida, não corrigida ainda.
 
 ---
 
@@ -228,14 +314,17 @@ for model in models:
 customer-intelligence-databricks/
 ├── 00_setup/            # Começar aqui
 ├── 01_bronze/           # Dados raw
-├── 02_silver/           # Dados limpos
-├── 03_gold/             # Features
-├── 04_models/           # ML models (churn, propensity, segmentação, etc.)
+├── 02_silver/           # Dados limpos (+ Data Quality Gate)
+├── 03_gold/             # Features (+ Data Quality Gate)
+├── 04_models/           # Churn, Propensity, Segmentação (Clustering + Regional),
+│                         # Recomendação, Ativação Saldo Dormente, Forecast GMV,
+│                         # AutoML, Retraining, SHAP, Model Serving
 ├── 05_scoring/          # Batch scoring
-├── 06_experimentation/  # A/B test
-├── 07_monitoring/       # Drift & KPIs
+├── 06_experimentation/  # A/B Testing + Multi-Armed Bandit (Thompson Sampling)
+├── 07_monitoring/       # Drift, KPIs, alertas, Delta Maintenance
 ├── 08_dashboards/       # SQL queries
 ├── 09_integrations/     # CRM
+├── 10_governance/       # COMMENT ON, tags de classificação, masking, GRANT/REVOKE
 ├── production/          # Notebooks avançados (CI/CD, DLT, feature store, MLflow avançado)
 └── docs/                # Esta documentação
 ```
