@@ -1,12 +1,12 @@
 # Databricks Asset Bundle (DAB) Configuration
 bundle:
   name: customer_intelligence
-  
+
 variables:
   catalog:
     description: Unity Catalog name
     default: customer_intelligence
-  
+
   schema:
     description: Schema name
     default: gold
@@ -47,8 +47,15 @@ resources:
     feature_store_update:
       name: "[${bundle.target}] Feature Store Update"
 
+      # max_concurrent_runs evita que um "Run Now" manual sobreponha o
+      # schedule automático e grave concorrentemente nas mesmas tabelas Delta.
+      max_concurrent_runs: 1
+
       tasks:
         - task_key: update_features
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: ./production/feature_store/feature_store_complete.py
             base_parameters:
@@ -64,12 +71,17 @@ resources:
     ml_training_pipeline:
       name: "[${bundle.target}] ML Training Pipeline"
 
+      max_concurrent_runs: 1
+
       schedule:
         quartz_cron_expression: "0 0 2 * * ?"  # Daily at 2 AM
         timezone_id: "America/Sao_Paulo"
 
       tasks:
         - task_key: train_sparkml
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: ./production/models/sparkml_distributed.py
 
@@ -81,6 +93,9 @@ resources:
         - task_key: mlflow_experiments
           depends_on:
             - task_key: train_sparkml
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
 
           notebook_task:
             notebook_path: ./production/models/mlflow_advanced.py
@@ -102,8 +117,16 @@ resources:
     # mesmo sob "dev". Corrigir isso exigiria parametrizar a célula de config
     # duplicada em ~12 notebooks; fica registrado como limitação conhecida, não
     # corrigida nesta rodada.
+    #
+    # NOTIFICAÇÕES: email_notifications/webhook_notifications propositalmente
+    # omitidas — exigiriam um endereço de e-mail ou webhook real cravado no
+    # YAML, o que não faz sentido pra um repo de portfólio genérico. retry +
+    # timeout + max_concurrent_runs (abaixo) cobrem a parte de resiliência que
+    # não depende de uma identidade externa específica.
     main_pipeline:
       name: "[${bundle.target}] Main Pipeline (Bronze a Monitoring)"
+
+      max_concurrent_runs: 1
 
       schedule:
         quartz_cron_expression: "0 0 4 ? * MON"  # Semanal, segunda 4h (2h após ml_training_pipeline, evita disputa de cluster)
@@ -111,6 +134,9 @@ resources:
 
       tasks:
         - task_key: bronze_ingestion
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./01_bronze/Ingestao Dados Bronze.py"
           new_cluster:
@@ -121,6 +147,9 @@ resources:
         - task_key: silver_transformation
           depends_on:
             - task_key: bronze_ingestion
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./02_silver/Transformacao Silver.py"
           new_cluster:
@@ -131,6 +160,9 @@ resources:
         - task_key: gold_feature_engineering
           depends_on:
             - task_key: silver_transformation
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./03_gold/Feature Engineering Gold.py"
           new_cluster:
@@ -142,6 +174,9 @@ resources:
         - task_key: model_churn_prediction
           depends_on:
             - task_key: gold_feature_engineering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Modelo Churn Prediction.py"
           new_cluster:
@@ -152,6 +187,9 @@ resources:
         - task_key: model_propensity_score
           depends_on:
             - task_key: gold_feature_engineering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Modelo Propensity Score.py"
           new_cluster:
@@ -162,6 +200,9 @@ resources:
         - task_key: model_segmentacao_clustering
           depends_on:
             - task_key: gold_feature_engineering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Segmentacao Clientes Clustering.py"
           new_cluster:
@@ -172,6 +213,9 @@ resources:
         - task_key: model_ativacao_saldo_dormente
           depends_on:
             - task_key: gold_feature_engineering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Ativacao Saldo Dormente.py"
           new_cluster:
@@ -182,6 +226,9 @@ resources:
         - task_key: model_forecast_gmv
           depends_on:
             - task_key: gold_feature_engineering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Forecast GMV e Resgates.py"
           new_cluster:
@@ -193,6 +240,9 @@ resources:
         - task_key: model_segmentacao_regional
           depends_on:
             - task_key: model_segmentacao_clustering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Segmentacao Regional.py"
           new_cluster:
@@ -203,6 +253,9 @@ resources:
         - task_key: model_sistema_recomendacao
           depends_on:
             - task_key: model_segmentacao_clustering
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./04_models/Sistema Recomendacao.py"
           new_cluster:
@@ -214,6 +267,9 @@ resources:
         - task_key: batch_scoring
           depends_on:
             - task_key: model_churn_prediction
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./05_scoring/Batch Scoring.py"
           new_cluster:
@@ -230,6 +286,9 @@ resources:
             - task_key: model_segmentacao_regional
             - task_key: model_sistema_recomendacao
             - task_key: batch_scoring
+          timeout_seconds: 3600
+          max_retries: 2
+          min_retry_interval_millis: 120000
           notebook_task:
             notebook_path: "./07_monitoring/Monitoramento Performance.py"
           new_cluster:

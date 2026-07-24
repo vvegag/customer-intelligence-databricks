@@ -87,10 +87,11 @@ print(f"  AUC-ROC: {champion_metrics.get('auc_roc', float('nan')):.4f}")
 # Carregar features
 df_features = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_features"))
 
-# Features do modelo
+# Features do modelo — tem que bater exatamente com "Modelo Churn Prediction.py"
+# (recency_days/frequency ficam de fora de propósito: vazariam churn_label)
 feature_cols = [
     "age", "customer_age_days",
-    "recency_days", "frequency", "monetary_total", "monetary_avg",
+    "monetary_total", "monetary_avg",
     "customer_lifetime_days", "purchase_frequency_per_day",
     "unique_products_purchased", "total_items_purchased",
     "event_count_30d", "session_count_30d", "engagement_score_30d",

@@ -486,21 +486,40 @@ def daily_crm_sync():
     # Trigger alerts for high-risk customers
     print("\n🚨 Triggering alerts...")
     alert_result = trigger_high_churn_alerts()
-    
+
+    # Ambas as integrações sempre retornavam status='success' mesmo com 100%
+    # de falha (só contavam erros internamente e seguiam em frente) — um
+    # outage total do Salesforce/HubSpot passava despercebido, com o job
+    # aparecendo "verde" no Databricks Jobs UI. Aqui checamos o resultado
+    # real: se havia registro pra sincronizar e NENHUM dos dois destinos
+    # recebeu nada, é falha total do sync, não sucesso.
+    sf_sent = sf_result.get('records_sent', 0)
+    hs_updated = hs_result.get('contacts_updated', 0)
+    sync_failed = total_records > 0 and sf_sent == 0 and hs_updated == 0
+    overall_status = 'error' if sync_failed else 'success'
+
     # Summary
     summary = {
         'timestamp': datetime.now().isoformat(),
+        'status': overall_status,
         'total_records': total_records,
         'salesforce': sf_result,
         'hubspot': hs_result,
         'alerts': alert_result
     }
-    
+
     print("\n" + "="*80)
     print("📊 SYNC SUMMARY")
     print("="*80)
     print(json.dumps(summary, indent=2))
-    
+
+    if sync_failed:
+        raise RuntimeError(
+            f"CRM sync falhou completamente: {total_records:,} registros esperados, "
+            f"0 sincronizados no Salesforce e 0 no HubSpot. Task deve falhar, não "
+            f"aparecer como sucesso."
+        )
+
     return summary
 
 print("✅ Batch sync pipeline ready")

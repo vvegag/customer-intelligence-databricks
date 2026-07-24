@@ -98,12 +98,20 @@ df_labels = spark.table(get_full_table_name(SCHEMA_GOLD, "churn_labels"))
 df_model = df_features.join(df_labels.select("customer_id", "churn_label"), "customer_id", "inner")
 
 # Selecionar features relevantes (excluir IDs, timestamps, etc)
+# IMPORTANTE: recency_days e frequency ficam de fora de propósito — são as
+# MESMAS colunas usadas pra construir churn_label (ver Feature Engineering
+# Gold.py, seção "Criar Target para Churn": churn_label = 1 quando
+# recency_days > 90 AND frequency > 0). Incluí-las no feature set vazaria o
+# rótulo — o modelo aprenderia o próprio threshold da definição de churn, não
+# comportamento preditivo real. monetary_total/monetary_avg e as demais
+# features RFM-derivadas não entram na fórmula do rótulo, então continuam
+# válidas como features.
 feature_cols = [
     # Demographics
     "age", "customer_age_days",
-    
-    # RFM
-    "recency_days", "frequency", "monetary_total", "monetary_avg",
+
+    # RFM (sem recency_days/frequency — usadas na definição do rótulo, ver nota acima)
+    "monetary_total", "monetary_avg",
     "customer_lifetime_days", "purchase_frequency_per_day",
     "unique_products_purchased", "total_items_purchased",
     

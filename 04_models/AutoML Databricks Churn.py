@@ -65,9 +65,10 @@ df_labels = df_labels.withColumnRenamed("recency_days", "recency_days_label") \
 df_automl = df_features.join(df_labels, "customer_id", "inner")
 
 # Selecionar features relevantes (mesmo dataset do modelo manual)
+# recency_days/frequency ficam de fora — são as colunas usadas pra construir
+# churn_label em Feature Engineering Gold.py, incluí-las vazaria o rótulo
+# (ver mesma nota em "Modelo Churn Prediction.py")
 feature_cols = [
-    "recency_days",  # recency_days da tabela de features
-    "frequency",     # frequency da tabela de features
     "monetary_total",
     "monetary_avg",
     "customer_lifetime_days",
