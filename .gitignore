@@ -38,3 +38,6 @@ Thumbs.db
 .databricks/
 *.dbc
 RESUMO_PROJETO_ENTREVISTA.md
+
+# PDFs de estudo gerados localmente (não fazem parte do código do projeto)
+docs/pdf/
