@@ -116,9 +116,28 @@ Output: Priorização de clientes por valor em risco de nunca ser resgatado
 ```bash
 Abra: 04_models/Forecast GMV e Resgates
 Clique: Run All
-Tempo: ~2 minutos
-Output: Forecast semanal de resgate (Prophet) com validação em holdout
+Tempo: ~3 minutos
+Output: Forecast semanal (Prophet) + Real vs. Meta + comparação Prophet/SARIMA
+        com calendário comercial (seção ilustrativa)
 ```
+Metodologia adaptada de um forecast real usado em produção na CRMBonus — só a
+técnica foi trazida, sem nenhum dado/tabela/número/cliente real. 4 seções:
+1. **Forecast real** (dado do projeto): Prophet, holdout de 8 semanas, MAE/MAPE,
+   registro no MLflow/Unity Catalog Model Registry (`@champion`/`@challenger`).
+2. **Real vs. Meta**: agrega o forecast por mês e compara contra uma meta
+   ilustrativa (gap percentual) — mesmo dado real da seção 1.
+3. **Calendário de datas comerciais brasileiras**: gerado programaticamente
+   (Carnaval/Páscoa via `dateutil.easter`, Dia das Mães/Pais como "N-ésimo
+   domingo do mês", Black Friday como última sexta de novembro etc.) — sem
+   lista de datas hardcoded por ano.
+4. **Seção ilustrativa (série 100% sintética à parte)**: injeta o efeito do
+   calendário numa série sintética, roda Prophet com `holidays=` e SARIMA com
+   grid search de `(p,d,q)` por AIC, e compara os dois. Só existe porque a
+   série real (seção 1) tem menos de 2 anos e nenhuma sazonalidade real
+   embutida por desenho — não daria pra estimar sazonalidade anual nela com
+   confiança (ver nota de transparência no topo do próprio notebook).
+   **Nenhum modelo dessa seção vai para o MLflow Registry** — só o
+   `modelo_prophet` da seção 1 (dado real) é registrado.
 
 ### AutoML Databricks Churn
 ```bash

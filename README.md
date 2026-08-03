@@ -57,7 +57,7 @@ customer-intelligence-databricks/
 │   ├── Segmentacao Regional.py                # Cruzamento RFM × PIB regional (dado ilustrativo)
 │   ├── Sistema Recomendacao.py                # Next best action (híbrido + cold-start)
 │   ├── Ativacao Saldo Dormente.py             # Priorização por valor em risco não resgatado
-│   ├── Forecast GMV e Resgates.py             # Prophet: forecast semanal de resgate
+│   ├── Forecast GMV e Resgates.py             # Prophet (dado real) + Real vs. Meta + SARIMA/calendário comercial (ilustrativo)
 │   ├── AutoML Databricks Churn.py             # Comparação com Databricks AutoML
 │   ├── Automated Model Retraining.py          # Pipeline de retreino automático
 │   ├── Model_Explainability_SHAP.py           # Explicabilidade (waterfall/dependence/force plot)
