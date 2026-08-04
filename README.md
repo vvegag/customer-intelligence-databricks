@@ -302,6 +302,15 @@ que carrega informação do próprio rótulo) ou variável proxy, não um modelo
 excepcionalmente bom. O mesmo cuidado já levou à correção do vazamento de
 `recency_days`/`frequency` no feature set do Churn em sessão anterior.
 
+**Nota de escopo**: KS e tabela de decis nasceram como padrão de mercado em
+modelos de crédito (probability of default), onde orientam decisões de
+*pricing* por faixa de risco. Aqui, no Churn, a mesma mecânica orienta
+*priorização de retenção* — decil 1 (maior risco de churn) é quem justifica
+contato ativo/oferta de retenção; decis de baixo risco não. É a técnica
+generalizando entre domínios, não um empréstimo forçado do vocabulário de
+crédito: a separação de risco é o que importa, a ação de negócio em cima
+dela é que muda por contexto.
+
 ### Experimentação (A/B Testing)
 - **Lift**: % de melhoria vs controle
 - **p-value**: < 0.05 = estatisticamente significante
