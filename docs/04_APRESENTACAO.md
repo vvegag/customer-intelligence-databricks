@@ -674,7 +674,7 @@ _Desenvolvido com Databricks Lakehouse Platform • Resultados Reais Obtidos •
 > "Estruturei o projeto na arquitetura **Medallion** do Databricks, que garante qualidade, auditabilidade e escalabilidade:
 > 
 > **🥉 Bronze Layer (Raw Data)**  
-> Simulo dados realistas de 10 mil clientes, 50 mil transações, 20 campanhas, 100 mil eventos comportamentais.  
+> Simulo dados realistas de 10 mil clientes, 100 mil transações, 40 campanhas, 200 mil eventos comportamentais, numa janela de ~4 anos.  
 > Salvos como Delta Tables em `customer_intelligence.bronze`.  
 > **Por quê Delta?** ACID transactions, time travel, schema evolution.
 > 
