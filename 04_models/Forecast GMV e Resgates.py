@@ -4,36 +4,42 @@
 # MAGIC # Forecast de GMV / Resgates 📈
 # MAGIC
 # MAGIC ## Objetivo
-# MAGIC Prever o total semanal de resgate (soma de `response_value` em conversões de
-# MAGIC campanha) — o mesmo tipo de métrica que motiva um forecast de GMV: "quanto a
-# MAGIC gente vai resgatar/faturar nas próximas semanas, pra decidir se é agressivo ou
-# MAGIC conservador nas campanhas do próximo mês".
+# MAGIC Prever o resgate (soma de `response_value` em conversões de campanha) nas
+# MAGIC duas granularidades que um time de negócio realmente usa: **semanal**
+# MAGIC (operacional — ajustar campanha da próxima semana) e **mensal**
+# MAGIC (estratégico — bater meta do mês, alinhar metodologia entre times).
 # MAGIC
 # MAGIC ## Abordagem
-# MAGIC Prophet (Meta/Facebook), que lida nativamente com tendência + sazonalidade +
-# MAGIC intervalos de confiança, sem precisar diferenciar a série manualmente como no ARIMA
-# MAGIC puro.
+# MAGIC Prophet (Meta/Facebook) no dado real — lida nativamente com tendência +
+# MAGIC intervalo de confiança sem precisar diferenciar a série manualmente. A seção
+# MAGIC ilustrativa compara Prophet com `holidays` contra SARIMA sazonal (grid search
+# MAGIC por AIC), nas duas granularidades também.
 # MAGIC
 # MAGIC ## Nota de transparência sobre sazonalidade
 # MAGIC As datas de exposição/resposta de campanha neste dataset são geradas
-# MAGIC **uniformemente aleatórias** (ver `01_bronze/Ingestao Dados Bronze.py`, linhas
-# MAGIC 199/252/276 — composição de 3 uniformes aninhadas) — não têm nenhum efeito de
-# MAGIC calendário real embutido, e cobrem só ~22 meses (menos de 2 ciclos anuais
-# MAGIC completos). Por isso, o forecast principal (seção 2) vai mostrar tendência +
-# MAGIC ruído, não sazonalidade — isso é esperado e é honesto sobre a limitação do dado
-# MAGIC sintético, não um bug. A seção 3 mostra, à parte e claramente rotulada como
-# MAGIC ilustrativa, como o Prophet e o SARIMA lidam com sazonalidade e datas comerciais
-# MAGIC quando elas existem de verdade nos dados.
+# MAGIC **uniformemente aleatórias** (ver `01_bronze/Ingestao Dados Bronze.py` —
+# MAGIC `exposure_date`/`response_date` são deslocamentos aleatórios dentro da janela
+# MAGIC de cada campanha) — não têm nenhum efeito de calendário real embutido. Isso
+# MAGIC **não muda com mais anos de histórico**: mais dados dão mais ciclos pra
+# MAGIC estimar estatisticamente, mas não criam sazonalidade que não existe no
+# MAGIC processo gerador. Por isso o forecast real (seções 1-3) continua sem
+# MAGIC `yearly_seasonality`/SARIMA sazonal — ligar isso aqui seria o Prophet/SARIMA
+# MAGIC "encontrando" um padrão de calendário em ruído uniforme, que é exatamente o
+# MAGIC tipo de erro que este notebook está evitando de propósito. A seção
+# MAGIC ilustrativa (5-6) mostra a mesma metodologia numa série onde a sazonalidade
+# MAGIC existe de verdade, porque foi injetada deliberadamente.
 # MAGIC
 # MAGIC ## O que tem em cada seção
-# MAGIC 1-2. Forecast real (Prophet, holdout de 8 semanas, registro no MLflow/UC)
-# MAGIC 3. Real vs. Meta — comparação do forecast/observado contra uma meta mensal
-# MAGIC    ilustrativa
-# MAGIC 4. Ilustrativo: calendário de datas comerciais brasileiras (gerado
-# MAGIC    programaticamente), Prophet com `holidays`, SARIMA com grid search de
-# MAGIC    hiperparâmetros por AIC, e comparação entre os dois — tudo em série 100%
-# MAGIC    sintética, nunca registrado no MLflow (mesma regra de sempre: só o
-# MAGIC    `modelo_prophet` da seção 1-2 vai pro registry)
+# MAGIC 1. Forecast real **semanal** (Prophet, holdout de 8 semanas, registro no MLflow/UC)
+# MAGIC 2. Forecast real **mensal** (Prophet, holdout de 3 meses — informativo/dashboard, não registrado)
+# MAGIC 3. Real vs. Meta — forecast mensal contra uma meta ilustrativa
+# MAGIC 4. Calendário de datas comerciais brasileiras (gerado programaticamente)
+# MAGIC 5. Ilustrativo **semanal**: Prophet com `holidays` vs. SARIMA sazonal (m=52)
+# MAGIC 6. Ilustrativo **mensal**: Prophet com `holidays` vs. SARIMA sazonal (m=12)
+# MAGIC 7. Persistência em tabelas Gold (pra alimentar dashboards no futuro)
+# MAGIC
+# MAGIC Nenhum modelo das seções 4-6 (ilustrativas) vai pro MLflow Registry — só o
+# MAGIC Prophet semanal real (seção 1).
 
 # COMMAND ----------
 
@@ -52,6 +58,21 @@ CATALOG = "customer_intelligence"
 SCHEMA_SILVER = "silver"
 SCHEMA_GOLD = "gold"
 
+
+def get_full_table_name(schema, table):
+    """Retorna nome completo da tabela"""
+    return f"{CATALOG}.{schema}.{table}"
+
+def create_or_replace_table(df, schema, table, partition_by=None):
+    """Salva DataFrame como tabela Delta"""
+    full_name = get_full_table_name(schema, table)
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(partition_by)
+    writer.saveAsTable(full_name)
+    print(f"✓ Tabela criada: {full_name}")
+    return full_name
+
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -65,8 +86,8 @@ print("✓ Configuração carregada")
 
 # COMMAND ----------
 
-# DBTITLE 1,1. Agregar Resgate Semanal (dado real do projeto)
-df_responses = spark.table(f"{CATALOG}.{SCHEMA_SILVER}.campaign_responses")
+# DBTITLE 1,1. Forecast Real Semanal — Agregar Resgate
+df_responses = spark.table(get_full_table_name(SCHEMA_SILVER, "campaign_responses"))
 df_resgates = df_responses.filter(F.col("is_conversion") == 1)
 
 df_semanal = (
@@ -87,7 +108,7 @@ df_semanal.tail(10)
 
 # COMMAND ----------
 
-# DBTITLE 1,2. Forecast com Prophet
+# DBTITLE 1,Forecast Semanal com Prophet
 from prophet import Prophet
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
@@ -100,7 +121,7 @@ df_treino = df_prophet.iloc[:-N_HOLDOUT]
 df_teste = df_prophet.iloc[-N_HOLDOUT:]
 
 modelo_prophet = Prophet(
-    yearly_seasonality=False,   # dado não cobre múltiplos anos com sinal real
+    yearly_seasonality=False,   # dado gerado uniformemente aleatório, sem sazonalidade real (ver nota no topo)
     weekly_seasonality=False,   # já agregado por semana, não faz sentido aqui
     daily_seasonality=False,
     interval_width=0.90
@@ -120,9 +141,9 @@ mae = mean_absolute_error(df_teste["y"], previsao_holdout)
 mape = mean_absolute_percentage_error(df_teste["y"], previsao_holdout)
 
 # Registro no Unity Catalog Model Registry, mesmo padrão de Modelo Propensity
-# Score.py. IMPORTANTE: só modelo_prophet (treinado no dado real acima) é
-# registrado — o modelo_ilustrativo da seção 3 (sazonalidade sintética) nunca
-# deve ir pro registry, seria desonesto apresentar como forecast de verdade.
+# Score.py. IMPORTANTE: só este modelo (semanal, treinado no dado real) é
+# registrado — nenhum modelo mensal ou ilustrativo (seções 2 e 4-6) vai pro
+# registry, seria desonesto apresentar como forecast de verdade.
 model_name = f"{CATALOG}.{SCHEMA_GOLD}.forecast_gmv_model"
 
 with mlflow.start_run(run_name="forecast_prophet_v1") as run:
@@ -153,13 +174,10 @@ print(f"✓ Modelo registrado: {model_name}@champion (v{model_info.registered_mo
 print(f"✓ Modelo treinado com {len(df_treino)} semanas, validado em {N_HOLDOUT} semanas de holdout")
 print(f"  MAE no holdout: R$ {mae:,.2f}")
 print(f"  MAPE no holdout: {mape:.1%}")
-print("\n  ⚠️ Como a série não tem sazonalidade real (dado sintético uniforme), o Prophet")
-print("     essencialmente projeta a tendência recente + intervalo de confiança —")
-print("     não há padrão de calendário real pra ele aprender aqui.")
 
 # COMMAND ----------
 
-# DBTITLE 1,Visualizar forecast
+# DBTITLE 1,Visualizar forecast semanal
 import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots(figsize=(12, 5))
@@ -176,31 +194,73 @@ plt.show()
 
 # COMMAND ----------
 
-# DBTITLE 1,3. Real vs. Meta
+# DBTITLE 1,2. Forecast Real Mensal
 # MAGIC %md
-# MAGIC ## Real vs. Meta
-# MAGIC Compara o observado/forecast mensal contra uma meta de negócio — aqui uma
-# MAGIC meta **ilustrativa/sintética**, não um valor real de nenhuma empresa. O
-# MAGIC objetivo é demonstrar o padrão de análise (mensal, gap percentual), que é
-# MAGIC independente de a série ter sazonalidade real ou não — por isso entra aqui,
-# MAGIC na seção do dado real, sem contradizer a nota de transparência acima.
+# MAGIC ## Forecast Mensal (dado real)
+# MAGIC Mesma série real, agregada por mês — visão estratégica pra alinhar meta
+# MAGIC mensal com o time, complementar à visão semanal operacional acima. Mesma
+# MAGIC lógica (Prophet, sem sazonalidade — dado ainda uniformemente aleatório),
+# MAGIC só que **não registrado no MLflow**: é a mesma série de negócio vista em
+# MAGIC outra granularidade, não um segundo modelo concorrente — só o Prophet
+# MAGIC semanal continua sendo `@champion`.
 
 # COMMAND ----------
 
-# DBTITLE 1,Comparar observado/forecast mensal contra meta ilustrativa
-# Agrega observado (histórico) + forecast (futuro) por mês
-df_mensal = previsao[["ds", "yhat"]].copy()
-df_mensal["mes"] = df_mensal["ds"].dt.to_period("M").dt.to_timestamp()
-df_mensal_resumo = df_mensal.groupby("mes")["yhat"].sum().reset_index()
+# DBTITLE 1,Agregar e prever resgate mensal
+df_mensal_real = (
+    df_resgates
+    .withColumn("mes", F.date_trunc("month", F.col("response_date")))
+    .groupBy("mes")
+    .agg(F.sum("response_value").alias("total_resgate"))
+    .orderBy("mes")
+).toPandas()
 
-# Meta ilustrativa: crescimento mensal simples sobre a média histórica —
-# valor sintético só para demonstrar o padrão de comparação, não uma meta real.
-media_historica_mensal = df_prophet.set_index("ds")["y"].resample("MS").sum().mean()
-df_mensal_resumo["meta_ilustrativa"] = media_historica_mensal * 1.10  # +10% de meta sobre a média histórica
+df_prophet_mensal = df_mensal_real.rename(columns={"mes": "ds", "total_resgate": "y"})[["ds", "y"]]
+
+N_HOLDOUT_MENSAL = 3
+df_treino_mensal = df_prophet_mensal.iloc[:-N_HOLDOUT_MENSAL]
+df_teste_mensal = df_prophet_mensal.iloc[-N_HOLDOUT_MENSAL:]
+
+modelo_prophet_mensal = Prophet(
+    yearly_seasonality=False,  # mesmo motivo do semanal — ver nota de transparência
+    weekly_seasonality=False,
+    daily_seasonality=False,
+    interval_width=0.90
+)
+modelo_prophet_mensal.fit(df_treino_mensal)
+futuro_mensal = modelo_prophet_mensal.make_future_dataframe(periods=N_HOLDOUT_MENSAL + 3, freq="MS")
+previsao_mensal = modelo_prophet_mensal.predict(futuro_mensal)
+
+previsao_holdout_mensal = previsao_mensal.set_index("ds").loc[df_teste_mensal["ds"], "yhat"]
+mae_mensal = mean_absolute_error(df_teste_mensal["y"], previsao_holdout_mensal)
+mape_mensal = mean_absolute_percentage_error(df_teste_mensal["y"], previsao_holdout_mensal)
+
+print(f"✓ Modelo mensal treinado com {len(df_treino_mensal)} meses, validado em {N_HOLDOUT_MENSAL} meses de holdout")
+print(f"  MAE no holdout: R$ {mae_mensal:,.2f}")
+print(f"  MAPE no holdout: {mape_mensal:.1%}")
+print("  ℹ️ Informativo — não registrado no MLflow (só o modelo semanal é @champion)")
+
+# COMMAND ----------
+
+# DBTITLE 1,3. Real vs. Meta
+# MAGIC %md
+# MAGIC ## Real vs. Meta
+# MAGIC Compara o forecast mensal real (seção 2) contra uma meta de negócio — aqui
+# MAGIC uma meta **ilustrativa/sintética**, não um valor real de nenhuma empresa.
+
+# COMMAND ----------
+
+# DBTITLE 1,Comparar forecast mensal contra meta ilustrativa
+df_mensal_resumo = previsao_mensal[["ds", "yhat"]].copy()
+
+# Meta ilustrativa: +10% sobre a média histórica mensal — valor sintético só
+# para demonstrar o padrão de comparação, não uma meta real.
+media_historica_mensal = df_prophet_mensal.set_index("ds")["y"].mean()
+df_mensal_resumo["meta_ilustrativa"] = media_historica_mensal * 1.10
 df_mensal_resumo["gap_pct"] = (df_mensal_resumo["yhat"] / df_mensal_resumo["meta_ilustrativa"] - 1) * 100
 
 print("=" * 60)
-print("REAL/FORECAST vs. META (ilustrativa)")
+print("FORECAST MENSAL vs. META (ilustrativa)")
 print("=" * 60)
 print(df_mensal_resumo.to_string(index=False, formatters={
     "yhat": "R$ {:,.2f}".format,
@@ -210,20 +270,18 @@ print(df_mensal_resumo.to_string(index=False, formatters={
 
 # COMMAND ----------
 
-# DBTITLE 1,4. Ilustrativo: calendário comercial, Prophet vs. SARIMA (dado sintético à parte)
+# DBTITLE 1,4. Calendário de datas comerciais brasileiras (gerado programaticamente)
 # MAGIC %md
-# MAGIC ⚠️ **Esta seção usa uma série 100% sintética, criada só para esta demonstração**,
-# MAGIC não vem de nenhuma tabela do catálogo. A série real de resgates (seção 1) não
-# MAGIC tem sazonalidade real nem alcance temporal suficiente (~22 meses, < 2 ciclos
-# MAGIC anuais — ver nota de transparência no topo do notebook) pra justificar
-# MAGIC calendário de datas comerciais ou SARIMA sazonal. Esta seção mostra a
-# MAGIC metodologia — calendário de datas comerciais brasileiras como regressor,
-# MAGIC Prophet com `holidays`, SARIMA com seleção de hiperparâmetros por AIC — numa
-# MAGIC série onde esses efeitos existem de verdade.
+# MAGIC ⚠️ **A partir daqui, seções 5 e 6 usam uma série 100% sintética**, criada só
+# MAGIC pra esta demonstração, não vem de nenhuma tabela do catálogo. Mostram a
+# MAGIC metodologia — calendário de datas comerciais como regressor, Prophet com
+# MAGIC `holidays`, SARIMA sazonal com seleção de hiperparâmetros por AIC, nas duas
+# MAGIC granularidades — numa série onde esses efeitos existem de verdade (ver nota
+# MAGIC de transparência no topo do notebook sobre por que o dado real não usa isso).
 
 # COMMAND ----------
 
-# DBTITLE 1,Calendário de datas comerciais brasileiras (gerado programaticamente)
+# DBTITLE 1,Gerar calendário
 # Datas móveis (Carnaval, Páscoa, Dia das Mães/Pais) calculadas por regra, não
 # por lista de datas hardcoded por ano — evita manutenção manual ano a ano.
 from datetime import datetime, timedelta
@@ -269,77 +327,46 @@ def gerar_calendario_datas_comerciais(anos):
     return df
 
 
-calendario_comercial = gerar_calendario_datas_comerciais([2022, 2023])
+# 4 anos, mesma janela do dado real (01_bronze/Ingestao Dados Bronze.py: DATA_BASE=2022-01-01, JANELA_DIAS=4 anos)
+calendario_comercial = gerar_calendario_datas_comerciais([2022, 2023, 2024, 2025])
 print(f"✓ Calendário gerado: {len(calendario_comercial)} eventos em {calendario_comercial['ds'].dt.year.nunique()} anos")
 calendario_comercial
 
 # COMMAND ----------
 
-# DBTITLE 1,Simular série com sazonalidade + efeito de datas comerciais
+# DBTITLE 1,Simular série ilustrativa (4 anos, com sazonalidade + datas comerciais)
 rng = np.random.default_rng(11)
-datas_ilustrativas = pd.date_range("2022-01-01", periods=104, freq="W")
-tendencia = np.linspace(1000, 1800, 104)
-sazonalidade_anual = 400 * np.sin(2 * np.pi * np.arange(104) / 52)  # ciclo anual
+N_SEMANAS_ILUSTRATIVAS = 208  # 4 anos — mesma janela do dado real, dá ciclos suficientes pra SARIMA sazonal
+datas_ilustrativas = pd.date_range("2022-01-01", periods=N_SEMANAS_ILUSTRATIVAS, freq="W")
+tendencia = np.linspace(1000, 2600, N_SEMANAS_ILUSTRATIVAS)
+sazonalidade_anual = 400 * np.sin(2 * np.pi * np.arange(N_SEMANAS_ILUSTRATIVAS) / 52)  # ciclo anual
 
 # Injeta um bump nas semanas dentro da janela de cada data comercial — ao
 # contrário da sazonalidade senoidal genérica acima, isso simula picos
 # pontuais de campanha/resgate ao redor de datas de varejo específicas.
-efeito_datas_comerciais = np.zeros(104)
+efeito_datas_comerciais = np.zeros(N_SEMANAS_ILUSTRATIVAS)
 for _, evento in calendario_comercial.iterrows():
     janela_inicio = evento["ds"] + pd.Timedelta(days=evento["lower_window"])
     janela_fim = evento["ds"] + pd.Timedelta(days=evento["upper_window"])
     mask = (datas_ilustrativas >= janela_inicio) & (datas_ilustrativas <= janela_fim)
     efeito_datas_comerciais[mask] += 350
 
-ruido = rng.normal(0, 60, 104)
+ruido = rng.normal(0, 60, N_SEMANAS_ILUSTRATIVAS)
 serie_ilustrativa = pd.DataFrame({
     "ds": datas_ilustrativas,
     "y": tendencia + sazonalidade_anual + efeito_datas_comerciais + ruido
 })
-# log1p (não log puro): mais robusto a valores próximos de zero — convenção
-# adotada mesmo aqui, onde a série é sempre positiva por construção, para
-# manter o padrão consistente caso este bloco seja reaproveitado numa série
-# que tenha zeros de verdade.
+# log1p (não log puro): mais robusto a valores próximos de zero.
 serie_ilustrativa["y_log1p"] = np.log1p(serie_ilustrativa["y"])
 
-print(f"✓ Série ilustrativa gerada: {len(serie_ilustrativa)} semanas, "
+print(f"✓ Série ilustrativa gerada: {len(serie_ilustrativa)} semanas ({N_SEMANAS_ILUSTRATIVAS / 52:.0f} anos), "
       f"{(efeito_datas_comerciais > 0).sum()} com efeito de data comercial")
 
 # COMMAND ----------
 
-# DBTITLE 1,Prophet com calendário de datas comerciais
-df_prophet_ilustrativo = serie_ilustrativa[["ds", "y_log1p"]].rename(columns={"y_log1p": "y"})
-
-modelo_ilustrativo = Prophet(
-    yearly_seasonality=True,
-    weekly_seasonality=False,
-    daily_seasonality=False,
-    holidays=calendario_comercial
-)
-modelo_ilustrativo.fit(df_prophet_ilustrativo)
-futuro_ilustrativo = modelo_ilustrativo.make_future_dataframe(periods=26, freq="W")
-previsao_ilustrativa = modelo_ilustrativo.predict(futuro_ilustrativo)
-
-fig2 = modelo_ilustrativo.plot_components(previsao_ilustrativa)
-plt.suptitle("Decomposição tendência + sazonalidade + datas comerciais (série ilustrativa)", y=1.02)
-plt.tight_layout()
-plt.show()
-
-print("✓ Com sazonalidade e datas comerciais reais nos dados, o Prophet separa")
-print("  tendência, sazonalidade anual e efeito de cada data comercial automaticamente.")
-
-# COMMAND ----------
-
-# DBTITLE 1,SARIMA com grid search de hiperparâmetros (comparação)
-# Comparação exploratória, mesmo espírito do "XGBoost vs LightGBM" em
-# Modelo Churn Prediction.py: outro algoritmo, mesmo dado, só pra comparar
-# com rigor — nenhum dos dois modelos desta seção ilustrativa vai pro
-# MLflow Registry (só o modelo_prophet da seção 1, com dado real).
-#
-# Grid search só em (p,d,q), SEM termo sazonal (P,D,Q,m): tanto a série real
-# (~22 meses) quanto esta ilustrativa (104 semanas ≈ 2 anos) não têm ciclos
-# suficientes pra estimar sazonalidade de período 52 com confiança — rodar
-# grid search sazonal aqui seria caro e o resultado não seria confiável.
+# DBTITLE 1,Helper reaproveitável — grid search SARIMA por AIC
+# Usado tanto pra visão semanal (m=52) quanto mensal (m=12) — evita duplicar
+# a mesma lógica de busca duas vezes.
 import itertools
 import warnings
 
@@ -347,50 +374,207 @@ import statsmodels.api as sm
 
 warnings.filterwarnings("ignore")
 
-y_sarima = serie_ilustrativa["y_log1p"].values
-melhor_aic = np.inf
-melhor_ordem = None
-modelo_sarima = None
 
-for p, d, q in itertools.product(range(3), range(3), range(3)):
-    try:
-        resultado = sm.tsa.statespace.SARIMAX(
-            y_sarima, order=(p, d, q),
-            enforce_stationarity=False, enforce_invertibility=False
-        ).fit(disp=False)
-        if resultado.aic < melhor_aic:
-            melhor_aic = resultado.aic
-            melhor_ordem = (p, d, q)
-            modelo_sarima = resultado
-    except Exception:
-        continue  # combinação não convergiu, pula pra próxima
-
-print(f"✓ Melhor ordem SARIMA (menor AIC entre 27 combinações testadas): {melhor_ordem}, AIC={melhor_aic:.2f}")
-
-forecast_sarima = modelo_sarima.get_forecast(steps=26)
-previsao_sarima_original = np.expm1(forecast_sarima.predicted_mean)
+def buscar_melhor_sarima(valores, ordem_grid, ordem_sazonal_grid, m):
+    """Grid search de SARIMA(p,d,q)(P,D,Q,m) por AIC.
+    ordem_grid: iterável de tuplas (p,d,q). ordem_sazonal_grid: iterável de (P,D,Q).
+    Retorna (melhor_modelo_ajustado, melhor_ordem_completa, melhor_aic)."""
+    melhor_aic = np.inf
+    melhor_modelo = None
+    melhor_ordem = None
+    for p, d, q in ordem_grid:
+        for P, D, Q in ordem_sazonal_grid:
+            try:
+                resultado = sm.tsa.statespace.SARIMAX(
+                    valores, order=(p, d, q), seasonal_order=(P, D, Q, m),
+                    enforce_stationarity=False, enforce_invertibility=False
+                ).fit(disp=False)
+                if resultado.aic < melhor_aic:
+                    melhor_aic = resultado.aic
+                    melhor_modelo = resultado
+                    melhor_ordem = (p, d, q, P, D, Q, m)
+            except Exception:
+                continue  # combinação não convergiu, pula pra próxima
+    return melhor_modelo, melhor_ordem, melhor_aic
 
 # COMMAND ----------
 
-# DBTITLE 1,Comparação Prophet vs. SARIMA (série ilustrativa)
-previsao_prophet_original = np.expm1(previsao_ilustrativa["yhat"].tail(26).values)
+# DBTITLE 1,5. Ilustrativo Semanal — Prophet vs. SARIMA (m=52)
+# MAGIC %md
+# MAGIC ### Visão semanal (m=52)
+# MAGIC Comparação exploratória, mesmo espírito do "XGBoost vs LightGBM" em
+# MAGIC `Modelo Churn Prediction.py`: outro algoritmo, mesmo dado, só pra comparar
+# MAGIC com rigor — nenhum dos dois vai pro MLflow Registry.
+# MAGIC
+# MAGIC Grid sazonal deliberadamente pequeno (`P,Q ∈ {0,1}`, `D` fixo): `m=52` é caro
+# MAGIC pra grid search — cada ajuste SARIMAX com sazonalidade semanal é bem mais
+# MAGIC lento que sem termo sazonal. Com 4 anos (208 semanas) já dá pra tentar
+# MAGIC sazonalidade anual com alguma confiança, mas não pra bancar um grid grande.
 
-comparacao_df = pd.DataFrame({
+# COMMAND ----------
+
+# DBTITLE 1,Prophet semanal com calendário de datas comerciais
+df_prophet_ilustrativo = serie_ilustrativa[["ds", "y_log1p"]].rename(columns={"y_log1p": "y"})
+
+modelo_ilustrativo_semanal = Prophet(
+    yearly_seasonality=True,
+    weekly_seasonality=False,
+    daily_seasonality=False,
+    holidays=calendario_comercial
+)
+modelo_ilustrativo_semanal.fit(df_prophet_ilustrativo)
+futuro_ilustrativo_semanal = modelo_ilustrativo_semanal.make_future_dataframe(periods=26, freq="W")
+previsao_ilustrativa_semanal = modelo_ilustrativo_semanal.predict(futuro_ilustrativo_semanal)
+
+fig2 = modelo_ilustrativo_semanal.plot_components(previsao_ilustrativa_semanal)
+plt.suptitle("Decomposição semanal: tendência + sazonalidade + datas comerciais (série ilustrativa)", y=1.02)
+plt.tight_layout()
+plt.show()
+
+# COMMAND ----------
+
+# DBTITLE 1,SARIMA semanal sazonal (m=52)
+melhor_modelo_semanal, melhor_ordem_semanal, aic_semanal = buscar_melhor_sarima(
+    serie_ilustrativa["y_log1p"].values,
+    ordem_grid=itertools.product(range(2), [0], range(2)),          # p,q ∈ {0,1}, d=0
+    ordem_sazonal_grid=itertools.product(range(2), [0], range(2)),  # P,Q ∈ {0,1}, D=0
+    m=52
+)
+print(f"✓ Melhor SARIMA semanal sazonal: ordem={melhor_ordem_semanal}, AIC={aic_semanal:.2f}")
+
+forecast_sarima_semanal = melhor_modelo_semanal.get_forecast(steps=26)
+previsao_sarima_semanal_original = np.expm1(forecast_sarima_semanal.predicted_mean)
+
+# COMMAND ----------
+
+# DBTITLE 1,Comparação semanal Prophet vs. SARIMA
+previsao_prophet_semanal_original = np.expm1(previsao_ilustrativa_semanal["yhat"].tail(26).values)
+
+comparacao_semanal_df = pd.DataFrame({
     "semana_futura": range(1, 27),
-    "Prophet (com holidays)": np.round(previsao_prophet_original, 2),
-    "SARIMA (melhor AIC)": np.round(previsao_sarima_original, 2),
+    "prophet_com_holidays": np.round(previsao_prophet_semanal_original, 2),
+    "sarima_melhor_aic": np.round(previsao_sarima_semanal_original, 2),
 })
-comparacao_df["Diferença %"] = (
-    (comparacao_df["SARIMA (melhor AIC)"] / comparacao_df["Prophet (com holidays)"] - 1) * 100
+comparacao_semanal_df["diferenca_pct"] = (
+    (comparacao_semanal_df["sarima_melhor_aic"] / comparacao_semanal_df["prophet_com_holidays"] - 1) * 100
 ).round(1)
 
 print("=" * 60)
-print("PROPHET vs. SARIMA — PRÓXIMAS 26 SEMANAS (série ilustrativa)")
+print("PROPHET vs. SARIMA — SEMANAL, PRÓXIMAS 26 SEMANAS (série ilustrativa)")
 print("=" * 60)
-print(comparacao_df.head(10).to_string(index=False))
-print("\n⚠️ Série ilustrativa: diferença entre os dois aqui não generaliza para dado")
-print("   real — o objetivo é demonstrar comparação metodológica rigorosa, como já")
-print("   feito para Churn (XGBoost vs LightGBM).")
+print(comparacao_semanal_df.head(10).to_string(index=False))
+print("\n⚠️ Série ilustrativa: diferença entre os dois aqui não generaliza para dado real.")
+
+# COMMAND ----------
+
+# DBTITLE 1,6. Ilustrativo Mensal — Prophet vs. SARIMA (m=12)
+# MAGIC %md
+# MAGIC ### Visão mensal (m=12)
+# MAGIC Mesma série ilustrativa, reagregada por mês. `m=12` é bem mais barato que
+# MAGIC `m=52` pra grid search — dá pra usar um grid maior aqui, mais fiel ao SARIMA
+# MAGIC de exemplo real que motivou esta seção (SARIMA(2,0,3)(0,0,3,12) sobre dado
+# MAGIC mensal, mesma ideia de calendário comercial como regressor).
+
+# COMMAND ----------
+
+# DBTITLE 1,Reagregar série ilustrativa por mês
+# Soma o valor (escala original, não log) por mês, depois reaplica log1p —
+# somar em escala log daria um resultado incorreto (log da soma ≠ soma dos logs).
+serie_ilustrativa_mensal = (
+    serie_ilustrativa.set_index("ds")["y"]
+    .resample("MS").sum()
+    .reset_index()
+)
+serie_ilustrativa_mensal["y_log1p"] = np.log1p(serie_ilustrativa_mensal["y"])
+
+print(f"✓ Série ilustrativa mensal: {len(serie_ilustrativa_mensal)} meses")
+
+# COMMAND ----------
+
+# DBTITLE 1,Prophet mensal com calendário de datas comerciais
+df_prophet_ilustrativo_mensal = serie_ilustrativa_mensal[["ds", "y_log1p"]].rename(columns={"y_log1p": "y"})
+
+modelo_ilustrativo_mensal = Prophet(
+    yearly_seasonality=True,
+    weekly_seasonality=False,
+    daily_seasonality=False,
+    holidays=calendario_comercial
+)
+modelo_ilustrativo_mensal.fit(df_prophet_ilustrativo_mensal)
+futuro_ilustrativo_mensal = modelo_ilustrativo_mensal.make_future_dataframe(periods=6, freq="MS")
+previsao_ilustrativa_mensal = modelo_ilustrativo_mensal.predict(futuro_ilustrativo_mensal)
+
+fig3 = modelo_ilustrativo_mensal.plot_components(previsao_ilustrativa_mensal)
+plt.suptitle("Decomposição mensal: tendência + sazonalidade + datas comerciais (série ilustrativa)", y=1.02)
+plt.tight_layout()
+plt.show()
+
+# COMMAND ----------
+
+# DBTITLE 1,SARIMA mensal sazonal (m=12)
+melhor_modelo_mensal, melhor_ordem_mensal, aic_mensal = buscar_melhor_sarima(
+    serie_ilustrativa_mensal["y_log1p"].values,
+    ordem_grid=itertools.product(range(3), range(2), range(3)),         # p ∈ {0,1,2}, d ∈ {0,1}, q ∈ {0,1,2}
+    ordem_sazonal_grid=itertools.product(range(2), range(2), range(2)),  # P,D,Q ∈ {0,1}
+    m=12
+)
+print(f"✓ Melhor SARIMA mensal sazonal: ordem={melhor_ordem_mensal}, AIC={aic_mensal:.2f}")
+
+forecast_sarima_mensal = melhor_modelo_mensal.get_forecast(steps=6)
+previsao_sarima_mensal_original = np.expm1(forecast_sarima_mensal.predicted_mean)
+
+# COMMAND ----------
+
+# DBTITLE 1,Comparação mensal Prophet vs. SARIMA
+previsao_prophet_mensal_original = np.expm1(previsao_ilustrativa_mensal["yhat"].tail(6).values)
+
+comparacao_mensal_df = pd.DataFrame({
+    "mes_futuro": range(1, 7),
+    "prophet_com_holidays": np.round(previsao_prophet_mensal_original, 2),
+    "sarima_melhor_aic": np.round(previsao_sarima_mensal_original, 2),
+})
+comparacao_mensal_df["diferenca_pct"] = (
+    (comparacao_mensal_df["sarima_melhor_aic"] / comparacao_mensal_df["prophet_com_holidays"] - 1) * 100
+).round(1)
+
+print("=" * 60)
+print("PROPHET vs. SARIMA — MENSAL, PRÓXIMOS 6 MESES (série ilustrativa)")
+print("=" * 60)
+print(comparacao_mensal_df.to_string(index=False))
+print("\n⚠️ Série ilustrativa: diferença entre os dois aqui não generaliza para dado real.")
+
+# COMMAND ----------
+
+# DBTITLE 1,7. Persistir Tabelas Gold (dashboards futuros)
+# MAGIC %md
+# MAGIC Salva os resultados como tabelas Delta pra um notebook de dashboard futuro
+# MAGIC consumir via SQL (mesmo padrão do resto do projeto — `08_dashboards/SQL
+# MAGIC Queries para Dashboards.ipynb`), em vez de só imprimir/plotar. Não conecto
+# MAGIC essas tabelas ao notebook de dashboards agora — fica pronto pra quando for
+# MAGIC decidido usar.
+
+# COMMAND ----------
+
+# DBTITLE 1,Forecast real (semanal + mensal)
+df_forecast_semanal_gold = (
+    previsao[["ds", "yhat", "yhat_lower", "yhat_upper"]]
+    .merge(df_prophet, on="ds", how="left")
+    .rename(columns={"y": "observado", "yhat": "forecast", "yhat_lower": "forecast_min", "yhat_upper": "forecast_max"})
+)
+create_or_replace_table(spark.createDataFrame(df_forecast_semanal_gold), SCHEMA_GOLD, "forecast_gmv_semanal")
+
+df_forecast_mensal_gold = df_mensal_resumo.rename(columns={"yhat": "forecast"})
+create_or_replace_table(spark.createDataFrame(df_forecast_mensal_gold), SCHEMA_GOLD, "forecast_gmv_mensal")
+
+# COMMAND ----------
+
+# DBTITLE 1,Comparação ilustrativa (semanal + mensal)
+create_or_replace_table(
+    spark.createDataFrame(comparacao_semanal_df), SCHEMA_GOLD, "forecast_ilustrativo_semanal"
+)
+create_or_replace_table(
+    spark.createDataFrame(comparacao_mensal_df), SCHEMA_GOLD, "forecast_ilustrativo_mensal"
+)
 
 # COMMAND ----------
 
@@ -398,11 +582,14 @@ print("   feito para Churn (XGBoost vs LightGBM).")
 print("="*60)
 print("FORECAST DE RESGATE - RESUMO")
 print("="*60)
-print(f"✅ Série real: {len(df_semanal)} semanas de resgate agregado")
-print(f"✅ MAE holdout: R$ {mae:,.2f} | MAPE holdout: {mape:.1%}")
-print("✅ Forecast gerado para as próximas 8 semanas")
+print(f"✅ Série real: {len(df_semanal)} semanas / {len(df_mensal_real)} meses de resgate agregado")
+print(f"✅ MAE holdout semanal: R$ {mae:,.2f} | MAPE: {mape:.1%}")
+print(f"✅ MAE holdout mensal: R$ {mae_mensal:,.2f} | MAPE: {mape_mensal:.1%}")
 print("✅ Real vs. Meta: comparação mensal contra meta ilustrativa")
-print("✅ Seção ilustrativa: calendário comercial + Prophet(holidays) vs. SARIMA(AIC)")
+print(f"✅ Ilustrativo semanal (m=52): SARIMA {melhor_ordem_semanal}, AIC={aic_semanal:.1f}")
+print(f"✅ Ilustrativo mensal (m=12): SARIMA {melhor_ordem_mensal}, AIC={aic_mensal:.1f}")
+print("✅ 4 tabelas Gold salvas: forecast_gmv_semanal, forecast_gmv_mensal,")
+print("   forecast_ilustrativo_semanal, forecast_ilustrativo_mensal")
 print("="*60)
 
 # COMMAND ----------

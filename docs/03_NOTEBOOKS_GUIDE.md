@@ -29,7 +29,7 @@ Abra: 01_bronze/Ingestao Dados Bronze
 Clique: Run All
 Tempo: ~3 minutos
 ```
-✅ **O que faz**: Simula 10k clientes, 50k transações, 100k eventos
+✅ **O que faz**: Simula 10k clientes, 100k transações, 40 campanhas, 200k eventos — janela de ~4 anos (2022-2025)
 
 ### Passo 3: Limpar Dados
 ```bash
@@ -116,28 +116,40 @@ Output: Priorização de clientes por valor em risco de nunca ser resgatado
 ```bash
 Abra: 04_models/Forecast GMV e Resgates
 Clique: Run All
-Tempo: ~3 minutos
-Output: Forecast semanal (Prophet) + Real vs. Meta + comparação Prophet/SARIMA
-        com calendário comercial (seção ilustrativa)
+Tempo: ~5 minutos
+Output: Forecast real semanal + mensal (Prophet) + Real vs. Meta + comparação
+        Prophet/SARIMA semanal (m=52) e mensal (m=12) com calendário comercial
+        (seção ilustrativa) + 4 tabelas Gold pra dashboards futuros
 ```
 Metodologia adaptada de um forecast real usado em produção na CRMBonus — só a
-técnica foi trazida, sem nenhum dado/tabela/número/cliente real. 4 seções:
-1. **Forecast real** (dado do projeto): Prophet, holdout de 8 semanas, MAE/MAPE,
-   registro no MLflow/Unity Catalog Model Registry (`@champion`/`@challenger`).
-2. **Real vs. Meta**: agrega o forecast por mês e compara contra uma meta
-   ilustrativa (gap percentual) — mesmo dado real da seção 1.
-3. **Calendário de datas comerciais brasileiras**: gerado programaticamente
+técnica foi trazida, sem nenhum dado/tabela/número/cliente real. Dado real
+agora cobre ~4 anos (janela estendida em `01_bronze/Ingestao Dados Bronze.py`,
+`DATA_BASE`/`JANELA_DIAS`), pra dar tanto visão semanal (operacional) quanto
+mensal (estratégica/meta) com histórico suficiente. 7 seções:
+1. **Forecast real semanal** (dado do projeto): Prophet, holdout de 8 semanas,
+   MAE/MAPE, registro no MLflow/Unity Catalog Model Registry
+   (`@champion`/`@challenger`) — o único modelo registrado do notebook.
+2. **Forecast real mensal**: mesma série real, agregada por mês, holdout de 3
+   meses — visão informativa/dashboard, não registrada no MLflow (é a mesma
+   série de negócio, não um segundo modelo concorrente).
+3. **Real vs. Meta**: forecast mensal (seção 2) comparado contra uma meta
+   ilustrativa (gap percentual).
+4. **Calendário de datas comerciais brasileiras**: gerado programaticamente
    (Carnaval/Páscoa via `dateutil.easter`, Dia das Mães/Pais como "N-ésimo
    domingo do mês", Black Friday como última sexta de novembro etc.) — sem
    lista de datas hardcoded por ano.
-4. **Seção ilustrativa (série 100% sintética à parte)**: injeta o efeito do
-   calendário numa série sintética, roda Prophet com `holidays=` e SARIMA com
-   grid search de `(p,d,q)` por AIC, e compara os dois. Só existe porque a
-   série real (seção 1) tem menos de 2 anos e nenhuma sazonalidade real
-   embutida por desenho — não daria pra estimar sazonalidade anual nela com
-   confiança (ver nota de transparência no topo do próprio notebook).
-   **Nenhum modelo dessa seção vai para o MLflow Registry** — só o
-   `modelo_prophet` da seção 1 (dado real) é registrado.
+5-6. **Seções ilustrativas semanal e mensal (série 100% sintética à parte)**:
+   injeta o efeito do calendário numa série sintética de 4 anos, roda Prophet
+   com `holidays=` e SARIMA sazonal (grid search por AIC — `m=52` na visão
+   semanal com grid reduzido por custo computacional, `m=12` na mensal com
+   grid maior), e compara os dois nas duas granularidades. Existe porque o
+   dado real, mesmo com 4 anos, continua gerado uniformemente aleatório por
+   desenho — sazonalidade real não existe nele, só na série ilustrativa (ver
+   nota de transparência no topo do próprio notebook). **Nenhum modelo dessas
+   seções vai para o MLflow Registry** — só o Prophet semanal real (seção 1).
+7. **Persistência em Gold**: `gold.forecast_gmv_semanal`, `gold.forecast_gmv_mensal`,
+   `gold.forecast_ilustrativo_semanal`, `gold.forecast_ilustrativo_mensal` —
+   prontas pra um notebook de dashboard consumir (não conectadas ainda).
 
 ### AutoML Databricks Churn
 ```bash

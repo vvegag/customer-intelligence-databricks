@@ -43,6 +43,19 @@ MLFLOW_EXPERIMENT_PATH = f"/Users/{CURRENT_USER}/customer_intelligence_experimen
 DATA_PATH = "/FileStore/customer_intelligence/data"
 MODEL_REGISTRY_NAME_PREFIX = "customer_intelligence"
 
+# Janela de datas simulada — usada por customers/transactions/campaigns/events
+# (antes cada um repetia seu próprio datetime(2022,1,1) + timedelta hardcoded,
+# sem constante compartilhada). ~4 anos (era ~2 anos / 730 dias): dá margem
+# suficiente de ciclos anuais completos para o forecast semanal/mensal em
+# 04_models/Forecast GMV e Resgates.py sem precisar de sazonalidade real
+# embutida aqui (o dado continua gerado uniformemente aleatório por design).
+DATA_BASE = datetime(2022, 1, 1)
+JANELA_DIAS = 365 * 4
+# Campanhas usam uma janela um pouco menor (mesma proporção do desenho
+# original: 600/730) — deixa espaço pra duração da campanha (7-60 dias) sem
+# ultrapassar muito o fim do período simulado.
+JANELA_DIAS_CAMPANHAS = int(JANELA_DIAS * 600 / 730)
+
 # Helper functions
 def get_full_table_name(schema, table):
     """Retorna nome completo da tabela"""
@@ -77,7 +90,7 @@ N_CUSTOMERS = 10000
 customer_data = []
 for i in range(N_CUSTOMERS):
     customer_id = f"CUST_{i+1:06d}"
-    signup_date = datetime(2022, 1, 1) + timedelta(days=random.randint(0, 730))
+    signup_date = DATA_BASE + timedelta(days=random.randint(0, JANELA_DIAS))
     
     # Segmentos com distribuição realista
     segment_prob = random.random()
@@ -155,7 +168,14 @@ df_products.show(5)
 
 # DBTITLE 1,3. Transações (transactions_raw)
 # Simular transações
-N_TRANSACTIONS = 50000
+# Volume dobrado junto com a janela de datas (proporcional, mesmo fator ~2x):
+# se só a janela alargasse sem aumentar o volume, as mesmas transações
+# ficariam mais espalhadas no tempo, o intervalo médio entre compras por
+# cliente dobraria, e isso infla artificialmente recency_days > 90 na fórmula
+# de churn_label (Feature Engineering Gold.py) — efeito colateral sem relação
+# nenhuma com comportamento simulado. Manter volume proporcional preserva a
+# densidade (transações por cliente por ano) igual a antes.
+N_TRANSACTIONS = 100000
 
 customer_ids = [row.customer_id for row in df_customers.select("customer_id").collect()]
 product_ids = [row.product_id for row in df_products.select("product_id").collect()]
@@ -165,7 +185,7 @@ transaction_data = []
 for i in range(N_TRANSACTIONS):
     customer_id = random.choice(customer_ids)
     product_id = random.choice(product_ids)
-    transaction_date = datetime(2022, 1, 1) + timedelta(days=random.randint(0, 730))
+    transaction_date = DATA_BASE + timedelta(days=random.randint(0, JANELA_DIAS))
     quantity = random.randint(1, 5)
     unit_price = product_prices[product_id]
     
@@ -192,11 +212,14 @@ df_transactions.show(5)
 
 # DBTITLE 1,4. Campanhas (campaigns_raw)
 # Simular campanhas de marketing
-N_CAMPAIGNS = 20
+# Volume dobrado junto com a janela (mesmo motivo do item 3: preservar
+# densidade de exposições/respostas por semana, pra série do Forecast GMV
+# não ficar mais esparsa/ruidosa com o período maior).
+N_CAMPAIGNS = 40
 
 campaign_data = []
 for i in range(N_CAMPAIGNS):
-    start_date = datetime(2022, 1, 1) + timedelta(days=random.randint(0, 600))
+    start_date = DATA_BASE + timedelta(days=random.randint(0, JANELA_DIAS_CAMPANHAS))
     end_date = start_date + timedelta(days=random.randint(7, 60))
     
     campaign_data.append({
@@ -224,7 +247,8 @@ df_campaigns.show(5)
 # PySpark, sem loop Python e sem ação Spark repetida (a versão anterior chamava
 # .filter().first() 30.000 vezes dentro do loop, o que sozinho já custava minutos
 # de overhead de agendamento de job por iteração).
-N_EXPOSURES = 30000
+# Volume dobrado junto com a janela de datas (mesmo motivo do item 3/4).
+N_EXPOSURES = 60000
 
 # Índice numérico sequencial para clientes e campanhas, para permitir "escolher
 # um valor aleatório" via join em vez de random.choice() célula a célula
@@ -297,16 +321,17 @@ df_responses.show(5)
 
 # DBTITLE 1,7. Eventos Comportamentais (behavioral_events_raw)
 # Simular eventos comportamentais
-N_EVENTS = 100000
+# Volume dobrado junto com a janela de datas (mesmo motivo do item 3/4).
+N_EVENTS = 200000
 
 event_types = ["page_view", "product_view", "add_to_cart", "remove_from_cart", "search", "login", "logout"]
 event_data = []
 
 for i in range(N_EVENTS):
     customer_id = random.choice(customer_ids)
-    event_date = datetime(2022, 1, 1) + timedelta(days=random.randint(0, 730), 
-                                                   hours=random.randint(0, 23),
-                                                   minutes=random.randint(0, 59))
+    event_date = DATA_BASE + timedelta(days=random.randint(0, JANELA_DIAS),
+                                        hours=random.randint(0, 23),
+                                        minutes=random.randint(0, 59))
     event_type = random.choice(event_types)
     
     event_data.append({

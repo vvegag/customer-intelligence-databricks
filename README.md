@@ -57,7 +57,7 @@ customer-intelligence-databricks/
 │   ├── Segmentacao Regional.py                # Cruzamento RFM × PIB regional (dado ilustrativo)
 │   ├── Sistema Recomendacao.py                # Next best action (híbrido + cold-start)
 │   ├── Ativacao Saldo Dormente.py             # Priorização por valor em risco não resgatado
-│   ├── Forecast GMV e Resgates.py             # Prophet (dado real) + Real vs. Meta + SARIMA/calendário comercial (ilustrativo)
+│   ├── Forecast GMV e Resgates.py             # Prophet semanal+mensal (dado real, ~4 anos) + Real vs. Meta + SARIMA/calendário comercial (ilustrativo) + tabelas Gold
 │   ├── AutoML Databricks Churn.py             # Comparação com Databricks AutoML
 │   ├── Automated Model Retraining.py          # Pipeline de retreino automático
 │   ├── Model_Explainability_SHAP.py           # Explicabilidade (waterfall/dependence/force plot)
@@ -146,13 +146,13 @@ e configura o experimento MLflow (detecta o usuário logado automaticamente).
 ```bash
 01_bronze/Ingestao Dados Bronze
 ```
-Simula dados de:
+Simula dados de (janela de ~4 anos, 2022-2025):
 - 10.000 clientes
 - 500 produtos
-- 50.000 transações
-- 20 campanhas
-- 30.000 exposições a campanhas
-- 100.000 eventos comportamentais
+- 100.000 transações
+- 40 campanhas
+- 60.000 exposições a campanhas
+- 200.000 eventos comportamentais
 
 ### 3. Transformação (Silver)
 ```bash
