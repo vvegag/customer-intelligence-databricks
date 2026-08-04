@@ -176,6 +176,7 @@ Cria features:
 ```
 Treina modelo XGBoost:
 - AUC-ROC, Precision, Recall, F1
+- KS (Kolmogorov-Smirnov) + tabela de decis (padrão de mercado em risco/propensão) e alerta de KS suspeito (possível vazamento)
 - Feature importance
 - Registra no MLflow / salva em Volume do Unity Catalog
 
@@ -284,9 +285,22 @@ Monitora:
 
 ### Modelo de Churn
 - **AUC-ROC**: ~0.85+ (excelente)
+- **KS (Kolmogorov-Smirnov)**: métrica padrão de mercado em risco/propensão — complementa o AUC-ROC
 - **Precision**: Poucos falsos positivos
 - **Recall**: Captura maioria dos churns
 - **F1-Score**: Balanço entre precision e recall
+
+**Por que KS além do AUC-ROC?** Em modelos de crédito/propensão/churn, KS
+(distância máxima entre as CDFs de score das classes positiva e negativa) é
+mais usado no mercado que AUC-ROC pra avaliar separação de risco, e vem
+acompanhado da tabela de decis (score dividido em 10 faixas, % do target por
+faixa) — ambos calculados em `04_models/Modelo Churn Prediction.py`, seção
+"4.1 KS e Tabela de Decis". **Como interpretar um KS suspeito**: KS de teste
+acima de ~0.65 é incomum pra churn/propensão de negócio — o notebook emite
+um alerta nesse caso, porque isso costuma indicar vazamento de dado (feature
+que carrega informação do próprio rótulo) ou variável proxy, não um modelo
+excepcionalmente bom. O mesmo cuidado já levou à correção do vazamento de
+`recency_days`/`frequency` no feature set do Churn em sessão anterior.
 
 ### Experimentação (A/B Testing)
 - **Lift**: % de melhoria vs controle

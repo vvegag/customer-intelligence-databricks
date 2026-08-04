@@ -10,7 +10,7 @@
 # MAGIC - **Algoritmo**: XGBoost Classifier
 # MAGIC - **Features**: RFM + Behavioral + Campaign History
 # MAGIC - **Target**: churn_label (0 = ativo, 1 = churn)
-# MAGIC - **Métricas**: AUC-ROC, Precision, Recall, F1
+# MAGIC - **Métricas**: AUC-ROC, Precision, Recall, F1, KS (Kolmogorov-Smirnov) + tabela de decis
 # MAGIC - **MLflow**: Rastreamento de experimentos e registro de modelo
 
 # COMMAND ----------
@@ -76,9 +76,10 @@ from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import (
-    roc_auc_score, accuracy_score, precision_score, 
+    roc_auc_score, accuracy_score, precision_score,
     recall_score, f1_score, classification_report, confusion_matrix
 )
+from scipy.stats import ks_2samp
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -196,6 +197,17 @@ print("✓ Modelo treinado")
 # Predições
 y_pred = model.predict(X_test)
 y_pred_proba = model.predict_proba(X_test)[:, 1]
+y_pred_proba_train = model.predict_proba(X_train)[:, 1]
+
+
+def calcular_ks(y_true, y_score):
+    """KS = distância máxima entre as CDFs do score nas duas classes.
+    Padrão de mercado em crédito/propensão (mais usado que AUC-ROC nesse
+    domínio) — usa ks_2samp em vez de reimplementar o cálculo manual de CDF.
+    """
+    ks_stat, _ = ks_2samp(y_score[y_true == 1], y_score[y_true == 0])
+    return ks_stat
+
 
 # Calcular métricas
 metrics = {
@@ -203,14 +215,30 @@ metrics = {
     "accuracy": accuracy_score(y_test, y_pred),
     "precision": precision_score(y_test, y_pred),
     "recall": recall_score(y_test, y_pred),
-    "f1_score": f1_score(y_test, y_pred)
+    "f1_score": f1_score(y_test, y_pred),
+    "ks_test": calcular_ks(y_test.values, y_pred_proba),
+    "ks_train": calcular_ks(y_train.values, y_pred_proba_train)
 }
+metrics["ks_train_test_diff"] = abs(metrics["ks_train"] - metrics["ks_test"])
 
 print("\n" + "="*60)
 print("MÉTRICAS DO MODELO")
 print("="*60)
 for metric, value in metrics.items():
     print(f"{metric}: {value:.4f}")
+
+# KS muito alto (>0.65) é incomum em churn/propensão de negócio — ao
+# contrário do AUC-ROC, quanto mais alto "melhor" não é uma leitura segura
+# aqui: é um sinal pra INVESTIGAR vazamento de dado (feature derivada do
+# próprio rótulo, como já aconteceu antes com recency_days/frequency no
+# churn_label) ou variável proxy, não algo a comemorar sem checar.
+KS_LIMIAR_SUSPEITO = 0.65
+if metrics["ks_test"] > KS_LIMIAR_SUSPEITO:
+    print(f"\n⚠️ ALERTA: KS de teste ({metrics['ks_test']:.4f}) está acima de "
+          f"{KS_LIMIAR_SUSPEITO} — incomum para modelos de churn/propensão de "
+          f"negócio. Investigar possível vazamento de dado (feature que "
+          f"'sabe' o rótulo) ou variável proxy antes de considerar isso um "
+          f"resultado bom.")
 
 # Feature importance
 feature_importance = pd.DataFrame({
@@ -342,6 +370,72 @@ print("\n" + "="*60)
 print("RELATÓRIO DE CLASSIFICAÇÃO")
 print("="*60)
 print(classification_report(y_test, y_pred, target_names=["Não Churn", "Churn"]))
+
+# COMMAND ----------
+
+# DBTITLE 1,4.1 KS e Tabela de Decis
+# Tabela de decis (score x target) — padrão de relatório de risco de
+# crédito/propensão: divide o conjunto de teste em 10 grupos por faixa de
+# score, decil 1 = score mais alto = maior risco de churn. Numa boa
+# separação de risco, a taxa de churn deve DECRESCER do decil 1 pro 10.
+def tabela_decis(y_true, y_score):
+    df_decis = pd.DataFrame({"y_true": y_true, "y_score": y_score})
+    df_decis["decil"] = pd.qcut(
+        df_decis["y_score"], 10, labels=False, duplicates="drop"
+    )
+    # decil mais alto (score maior) vira "Decil 1" (convenção de relatório de risco)
+    n_decis = df_decis["decil"].nunique()
+    df_decis["decil"] = n_decis - df_decis["decil"]
+
+    resumo = df_decis.groupby("decil").agg(
+        qtd_clientes=("y_true", "count"),
+        pct_churn=("y_true", "mean")
+    ).sort_index()
+    resumo["pct_churn"] = resumo["pct_churn"] * 100
+    return resumo
+
+
+decis_test = tabela_decis(y_test.values, y_pred_proba)
+
+print("\n" + "="*60)
+print("TABELA DE DECIS (Decil 1 = maior risco de churn)")
+print("="*60)
+print(decis_test.to_string())
+
+# Score alto = maior risco de churn ⇒ % churn deve cair do decil 1 pro 10.
+# Tolerante a pequenas inversões isoladas (dataset sintético, ruído normal);
+# só alerta se houver mais de 1-2 quebras na monotonicidade.
+quebras_monotonicidade = (decis_test["pct_churn"].diff().dropna() > 0).sum()
+if quebras_monotonicidade > 2:
+    print(f"\n⚠️ ALERTA: tabela de decis não é monotônica de forma consistente "
+          f"({quebras_monotonicidade} quebras) — o modelo pode não estar "
+          f"separando risco de forma confiável entre faixas de score.")
+else:
+    print(f"\n✓ Tabela de decis monotônica (ou com no máximo {quebras_monotonicidade} "
+          f"quebra(s) isolada(s), aceitável em dado sintético).")
+
+# Gráfico de barras: decil x % churn (padrão de relatório de risco de crédito)
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10, 5))
+plt.bar(decis_test.index.astype(str), decis_test["pct_churn"], color="steelblue")
+plt.xlabel("Decil (1 = maior risco de churn)")
+plt.ylabel("% Churn")
+plt.title("Tabela de Decis — Churn por Decil de Score (conjunto de teste)")
+plt.tight_layout()
+plt.show()
+
+print("\n" + "="*60)
+print("KS (KOLMOGOROV-SMIRNOV)")
+print("="*60)
+print(f"KS teste:  {metrics['ks_test']:.4f}")
+print(f"KS treino: {metrics['ks_train']:.4f}")
+print(f"Diferença (treino - teste): {metrics['ks_train_test_diff']:.4f}")
+print("\nKS mede a separação máxima entre as distribuições de score de quem")
+print("deu/não deu churn — quanto maior, melhor o modelo separa as classes.")
+print("É a métrica padrão de mercado em risco/propensão (mais usada que")
+print("AUC-ROC nesse domínio). Diferença grande entre treino e teste sugere")
+print("overfitting; KS de teste muito alto (ver alerta acima) sugere vazamento.")
 
 # COMMAND ----------
 
