@@ -289,7 +289,22 @@ class HubSpotIntegration:
         
         # Get customer emails (needed for HubSpot)
         customers_df = spark.table(f"{CATALOG}.silver.customers")
-        
+
+        # silver.customers não tem coluna 'email' neste projeto (dataset
+        # sintético, não gera PII de propósito) — antes esse join quebrava com
+        # um AnalysisException genérico do Spark se alguém trocasse DEMO_MODE
+        # para False. Falha explícita e acionável em vez de deixar o erro
+        # opaco estourar mais adiante.
+        if "email" not in customers_df.columns:
+            raise ValueError(
+                "update_hubspot_contacts() precisa de uma coluna 'email' em "
+                f"{CATALOG}.silver.customers, que não existe neste dataset "
+                "sintético. Use DEMO_MODE=True (padrão) para o fluxo de "
+                "demonstração, ou adicione 'email' ao schema de silver.customers "
+                "(02_silver/Transformacao Silver.py) antes de rodar com "
+                "credenciais reais."
+            )
+
         # Join predictions with customer emails
         update_df = predictions_df.join(
             customers_df.select('customer_id', 'email'),

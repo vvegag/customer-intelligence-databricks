@@ -27,6 +27,7 @@
 import pandas as pd
 import mlflow
 import mlflow.sklearn
+from pyspark.sql import functions as F
 
 CATALOG = "customer_intelligence"
 SCHEMA_BRONZE = "bronze"
@@ -180,6 +181,49 @@ create_or_replace_table(df_scores_spark, SCHEMA_GOLD, "customer_scores")
 print(f"✓ Scores salvos: {get_full_table_name(SCHEMA_GOLD, 'customer_scores')}")
 print("\nTop 10 clientes de maior risco:")
 print(df_scores.nlargest(10, "churn_probability")[["customer_id", "churn_probability", "churn_risk_category", "customer_value_score"]].to_string(index=False))
+
+# COMMAND ----------
+
+# DBTITLE 1,6. Data Quality Gate - Batch Scoring
+# Mesmo padrão dos gates de Silver/Gold (02_silver/Transformacao Silver.py,
+# 03_gold/Feature Engineering Gold.py): acumula erros e levanta ValueError se
+# algo sair do esperado — um gate que só avisa é o mesmo que não ter gate.
+# churn_probability fora de [0,1], nulos pós-fillna e reconciliação de
+# contagem (saída == entrada) pegariam, por exemplo, um X corrompido virando
+# NaN silencioso via pd.cut(), ou um join que dropou clientes sem avisar.
+dq_errors = []
+
+customer_scores_tbl = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_scores"))
+
+out_of_range = customer_scores_tbl.filter(
+    (F.col("churn_probability") < 0) | (F.col("churn_probability") > 1)
+).count()
+status = "OK" if out_of_range == 0 else "FALHOU"
+print(f"  [{status}] churn_probability fora de [0,1]: {out_of_range} linhas (esperado 0)")
+if out_of_range > 0:
+    dq_errors.append(f"churn_probability: {out_of_range} linhas fora do intervalo [0,1]")
+
+for col in ["customer_id", "churn_probability"]:
+    null_count = customer_scores_tbl.filter(F.col(col).isNull()).count()
+    status = "OK" if null_count == 0 else "FALHOU"
+    print(f"  [{status}] customer_scores.{col}: {null_count} nulos (esperado 0)")
+    if null_count > 0:
+        dq_errors.append(f"customer_scores.{col}: {null_count} valores nulos em coluna crítica")
+
+linhas_entrada = df_to_score.count()
+linhas_saida = customer_scores_tbl.count()
+status = "OK" if linhas_saida == linhas_entrada else "FALHOU"
+print(f"  [{status}] Reconciliação de linhas: entrada={linhas_entrada:,}, saída={linhas_saida:,}")
+if linhas_saida != linhas_entrada:
+    dq_errors.append(
+        f"Reconciliação de linhas: {linhas_saida:,} na saída, esperado {linhas_entrada:,} (== entrada)"
+    )
+
+if dq_errors:
+    raise ValueError(
+        "Data Quality Gate (Batch Scoring) falhou:\n" + "\n".join(f"  - {e}" for e in dq_errors)
+    )
+print("\n✓ Data Quality Gate (Batch Scoring) passou")
 
 # COMMAND ----------
 

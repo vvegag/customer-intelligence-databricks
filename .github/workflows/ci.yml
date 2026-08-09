@@ -28,10 +28,13 @@ jobs:
 
   validate-bundle:
     runs-on: ubuntu-latest
-    # Só roda em push para dev/master com credenciais configuradas nos Secrets do
-    # repositório (DATABRICKS_HOST / DATABRICKS_TOKEN). Se não estiverem
-    # configurados, o job falha rápido em vez de expor erro confuso de auth.
-    if: github.event_name == 'push'
+    # Roda em push e em pull_request (repo pessoal, sem PRs de fork — PRs do
+    # mesmo repo têm acesso normal aos Secrets) com credenciais configuradas
+    # nos Secrets do repositório (DATABRICKS_HOST / DATABRICKS_TOKEN). Antes
+    # só rodava em push, então um databricks.yml quebrado só era detectado
+    # depois do merge. Se os secrets não estiverem configurados, o job pula o
+    # resto em vez de expor erro confuso de auth (ver step abaixo).
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
