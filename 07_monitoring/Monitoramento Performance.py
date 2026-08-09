@@ -131,6 +131,99 @@ print("✓ Estatísticas salvas para monitoramento")
 
 # COMMAND ----------
 
+# DBTITLE 1,1.1 PSI (Population Stability Index) — drift real
+# PSI de verdade precisa das duas distribuições BRUTAS (não só média/stddev),
+# por isso mora aqui: este é o único notebook que lê os valores brutos por
+# cliente a cada execução (a tabela feature_drift_monitoring, acima, só guarda
+# estatística agregada — insuficiente pra PSI). Persistimos um snapshot bruto
+# por execução e comparamos contra o snapshot anterior mais recente.
+import numpy as np
+from datetime import datetime
+
+
+def calculate_psi(expected, actual, buckets=10):
+    """
+    Population Stability Index (PSI) entre duas distribuições.
+    PSI < 0.1: sem mudança significativa
+    0.1 <= PSI < 0.25: mudança moderada
+    PSI >= 0.25: mudança significativa (retraining recomendado)
+    """
+    def scale_range(input_array, min_val=0, max_val=1):
+        input_array = np.array(input_array)
+        return (input_array - input_array.min()) / (input_array.max() - input_array.min()) * (max_val - min_val) + min_val
+
+    expected_scaled = scale_range(expected)
+    actual_scaled = scale_range(actual)
+
+    breakpoints = np.linspace(0, 1, buckets + 1)
+    expected_percents = np.histogram(expected_scaled, breakpoints)[0] / len(expected)
+    actual_percents = np.histogram(actual_scaled, breakpoints)[0] / len(actual)
+
+    expected_percents = np.where(expected_percents == 0, 0.0001, expected_percents)
+    actual_percents = np.where(actual_percents == 0, 0.0001, actual_percents)
+
+    psi_values = (actual_percents - expected_percents) * np.log(actual_percents / expected_percents)
+    return float(np.sum(psi_values))
+
+
+# Snapshot bruto (customer_id + key_features) desta execução
+df_snapshot_atual = df_features.select(["customer_id"] + key_features) \
+    .withColumn("snapshot_date", F.current_timestamp())
+df_snapshot_atual.write.format("delta").mode("append").saveAsTable(
+    get_full_table_name(SCHEMA_GOLD, "feature_snapshot_history")
+)
+print("✓ Snapshot bruto salvo para cálculo de PSI")
+
+historico = spark.table(get_full_table_name(SCHEMA_GOLD, "feature_snapshot_history"))
+datas_disponiveis = [r["snapshot_date"] for r in historico.select("snapshot_date").distinct()
+                      .orderBy(F.desc("snapshot_date")).collect()]
+
+if len(datas_disponiveis) < 2:
+    print("ℹ️ Apenas 1 snapshot disponível — baseline estabelecida, PSI a partir "
+          "da próxima execução do Monitoramento.")
+    psi_results = []
+else:
+    data_atual, data_baseline = datas_disponiveis[0], datas_disponiveis[1]
+    df_atual_pd = historico.filter(F.col("snapshot_date") == data_atual).toPandas()
+    df_baseline_pd = historico.filter(F.col("snapshot_date") == data_baseline).toPandas()
+
+    psi_results = []
+    for feature in key_features:
+        psi = calculate_psi(
+            df_baseline_pd[feature].dropna().values,
+            df_atual_pd[feature].dropna().values,
+        )
+        psi_results.append({
+            "feature_name": feature,
+            "psi": psi,
+            "baseline_snapshot_date": data_baseline,
+            "current_snapshot_date": data_atual,
+            "computed_at": datetime.now()
+        })
+
+    df_psi = spark.createDataFrame(psi_results)
+    df_psi.write.format("delta").mode("append").saveAsTable(
+        get_full_table_name(SCHEMA_GOLD, "feature_psi_monitoring")
+    )
+
+    print("\n" + "="*80)
+    print("PSI POR FEATURE (baseline = snapshot anterior mais recente)")
+    print("="*80)
+    for r in psi_results:
+        print(f"  {r['feature_name']}: PSI={r['psi']:.4f}")
+
+    features_criticas = [r for r in psi_results if r["psi"] >= 0.25]
+    if features_criticas:
+        nomes = ", ".join(f"{r['feature_name']} (PSI={r['psi']:.3f})" for r in features_criticas)
+        send_slack_alert(
+            f"⚠️ Drift significativo detectado (PSI >= 0.25) nas features: {nomes}. "
+            "Considerar retreinamento — ver Automated Model Retraining."
+        )
+    else:
+        print("✓ Nenhuma feature com PSI >= 0.25 (sem drift significativo)")
+
+# COMMAND ----------
+
 # DBTITLE 1,2. Monitorar Taxa de Churn Real vs Prevista
 # Comparar churn real vs previsto
 df_labels = spark.table(get_full_table_name(SCHEMA_GOLD, "churn_labels"))

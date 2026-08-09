@@ -155,9 +155,21 @@ with mlflow.start_run(run_name="forecast_prophet_v1") as run:
     })
     mlflow.log_metrics({"mae": mae, "mape": mape})
 
+    # Signature/input_example — único modelo registrado no projeto que ainda
+    # não tinha isso (UC exige signature). O flavor Prophet do MLflow só aceita
+    # 'ds' como input de predição (não 'y', que é o que está sendo previsto) e
+    # devolve o dataframe completo do forecast como output — por isso a
+    # assinatura usa futuro[["ds"]]/previsao, não df_treino/y como um modelo
+    # sklearn comum.
+    from mlflow.models.signature import infer_signature
+    signature = infer_signature(futuro[["ds"]], previsao)
+    input_example = futuro[["ds"]].head()
+
     model_info = mlflow.prophet.log_model(
         modelo_prophet, "model",
-        registered_model_name=model_name
+        registered_model_name=model_name,
+        signature=signature,
+        input_example=input_example
     )
 
 client = MlflowClient()

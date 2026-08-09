@@ -64,46 +64,42 @@ except Exception as e:
 
 # COMMAND ----------
 
-# DBTITLE 1,2️⃣ Promover Modelo para Produção (Champion)
-# Promover última versão para @champion alias (equivalente a Production)
+# DBTITLE 1,2️⃣ Consumir o Champion já promovido no treino
+# O alias @champion já é setado pelo próprio notebook de treino (Modelo Churn
+# Prediction.py, linhas ~285-311, mesma lógica em Modelo Propensity Score.py)
+# no momento do registro. Antes, esta célula "redecidia" qual versão vira
+# champion via search_model_versions()[0] — a API não garante ordem, então
+# isso podia promover uma versão diferente da que o treino já elegeu. O papel
+# do notebook de serving é CONSUMIR essa decisão, não refazê-la.
 try:
-    versions = client.search_model_versions(f"name='{model_name}'")
-    
-    if versions:
-        latest_version = versions[0].version
-        
-        # Setar alias 'champion' na última versão
-        client.set_registered_model_alias(
-            name=model_name,
-            alias="champion",
-            version=latest_version
-        )
-        
-        print("✓ Modelo promovido para @champion")
-        print(f"  Versão: {latest_version}")
-        print(f"  URI: models:/{model_name}@champion")
-        
-        # Adicionar descrição ao modelo
-        client.update_registered_model(
-            name=model_name,
-            description="""Modelo de predição de churn de clientes.
-            
-            Features: RFM (Recency, Frequency, Monetary), comportamento de compra.
-            Algoritmo: XGBoost Classifier
-            Métricas: AUC-ROC, Precision, Recall
-            
-            Uso: POST /serving-endpoints/churn-prediction/invocations
-            Input: JSON com features do cliente
-            Output: {prediction: 0/1, probability: [p_no_churn, p_churn]}
-            """
-        )
-        
-        print("✓ Descrição do modelo atualizada")
-    else:
-        print("⚠️  Nenhuma versão encontrada para promover")
-        
+    champion_version = client.get_model_version_by_alias(model_name, "champion")
+    latest_version = champion_version.version
+
+    print("✓ Champion atual (definido no treino)")
+    print(f"  Versão: {latest_version}")
+    print(f"  URI: models:/{model_name}@champion")
+
+    # Adicionar descrição ao modelo
+    client.update_registered_model(
+        name=model_name,
+        description="""Modelo de predição de churn de clientes.
+
+        Features: RFM (Recency, Frequency, Monetary), comportamento de compra.
+        Algoritmo: XGBoost Classifier
+        Métricas: AUC-ROC, Precision, Recall
+
+        Uso: POST /serving-endpoints/churn-prediction/invocations
+        Input: JSON com features do cliente
+        Output: {prediction: 0/1, probability: [p_no_churn, p_churn]}
+        """
+    )
+
+    print("✓ Descrição do modelo atualizada")
+
 except Exception as e:
-    print(f"❌ Erro ao promover modelo: {e}")
+    print(f"⚠️  Nenhum @champion encontrado ainda: {e}")
+    print("  Execute o notebook 'Modelo Churn Prediction' primeiro — ele registra")
+    print("  o modelo e seta o alias @champion automaticamente no treino.")
 
 # COMMAND ----------
 

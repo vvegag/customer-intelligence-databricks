@@ -40,8 +40,10 @@ from datetime import datetime
 import mlflow
 import mlflow.xgboost
 from mlflow.tracking import MlflowClient
+from mlflow.exceptions import MlflowException
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score
+from sklearn.model_selection import train_test_split
 
 # MLflow setup
 mlflow.set_registry_uri('databricks-uc')
@@ -53,9 +55,10 @@ SCHEMA = "gold"
 MODEL_REGISTRY_PREFIX = f"{CATALOG}.{SCHEMA}"
 
 # Retraining thresholds
-DRIFT_THRESHOLD = 0.15  # desvio da média atual, em unidades de stddev do baseline, que aciona retraining
+DRIFT_THRESHOLD = 0.15  # PSI que aciona retraining (0.1-0.25 = moderado, ver calculate_psi() em Monitoramento Performance.py)
 PERFORMANCE_THRESHOLD = 0.02  # +2% accuracy required for promotion
 MIN_SAMPLES_REQUIRED = 1000  # Minimum samples for retraining
+RETRAIN_INTERVAL_DAYS = 7  # cadência do agendamento semanal (ver Job Configuration no fim do notebook)
 
 print("✅ Setup completo")
 
@@ -208,29 +211,47 @@ def get_current_model_performance(model_name: str) -> dict:
         print(f"⚠️ Error getting performance: {e}")
         return {'accuracy': 0.0, 'auc_roc': 0.0}
 
+def _dias_desde_ultimo_treino(model_name: str) -> float:
+    """Dias desde que o @champion atual foi registrado. Sem champion ainda
+    (primeira execução) retorna infinito, o que força o retraining."""
+    try:
+        champion = client.get_model_version_by_alias(f"{MODEL_REGISTRY_PREFIX}.{model_name}", "champion")
+        creation_date = datetime.fromtimestamp(champion.creation_timestamp / 1000)
+        return (datetime.now() - creation_date).days
+    except Exception:
+        return float("inf")
+
+
 def should_retrain(drift_status: dict, current_performance: dict, baseline_performance: dict) -> tuple:
     """
-    Decide se deve retreinar baseado em drift + performance
+    Decide se deve retreinar baseado em drift + performance + agendamento.
     Returns: (should_retrain: bool, reason: str)
     """
     reasons = []
-    
+
     # Check drift
     if drift_status['drift_detected']:
         reasons.append(f"Drift detected (PSI={drift_status['max_psi']:.3f} > {DRIFT_THRESHOLD})")
-    
+
     # Check performance degradation
     acc_drop = baseline_performance.get('accuracy', 0.85) - current_performance.get('accuracy', 0.0)
     if acc_drop > 0.05:  # 5% drop
         reasons.append(f"Performance degradation (accuracy drop={acc_drop:.2%})")
-    
-    # Check scheduled retraining (weekly)
-    # In production, check last training date
-    reasons.append("Scheduled weekly retraining")
-    
+
+    # Check scheduled retraining — antes disparava incondicionalmente (sem
+    # nenhum "if" acima do append), então should_retrain_flag era sempre True
+    # independente de drift/performance. Agora checa de verdade a data de
+    # criação do @champion atual via MLflow.
+    dias_desde_treino = _dias_desde_ultimo_treino(drift_status['model_name'])
+    if dias_desde_treino >= RETRAIN_INTERVAL_DAYS:
+        reasons.append(
+            f"Scheduled retraining ({dias_desde_treino:.0f} dias desde o último "
+            f"treino >= {RETRAIN_INTERVAL_DAYS})"
+        )
+
     should_retrain_flag = len(reasons) > 0
     reason_text = "; ".join(reasons) if reasons else "No retraining needed"
-    
+
     return should_retrain_flag, reason_text
 
 print("✅ Performance monitoring ready")
@@ -282,10 +303,19 @@ def retrain_model(model_name: str) -> str:
 
             X = df[feature_cols].fillna(0)
             y = df['churn_label']
-            
+
+            # Split treino/teste — antes o modelo era avaliado nos MESMOS dados
+            # de treino (model.fit(X, y) -> model.predict(X)), o que infla
+            # accuracy/AUC por overfitting e podia promover um modelo pior via
+            # compare_models() (que compara essa métrica contra o champion
+            # atual, presumivelmente avaliado com holdout de verdade).
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+
             # Train XGBoost
             from xgboost import XGBClassifier
-            
+
             model = XGBClassifier(
                 n_estimators=100,
                 max_depth=6,
@@ -293,25 +323,25 @@ def retrain_model(model_name: str) -> str:
                 random_state=42,
                 eval_metric='logloss'
             )
-            
-            model.fit(X, y)
-            
-            # Evaluate
-            y_pred = model.predict(X)
-            y_pred_proba = model.predict_proba(X)[:, 1]
-            
-            accuracy = accuracy_score(y, y_pred)
-            auc = roc_auc_score(y, y_pred_proba)
-            
+
+            model.fit(X_train, y_train)
+
+            # Evaluate no holdout, não no dado de treino
+            y_pred = model.predict(X_test)
+            y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+            accuracy = accuracy_score(y_test, y_pred)
+            auc = roc_auc_score(y_test, y_pred_proba)
+
             # Log metrics
             mlflow.log_metric("accuracy", accuracy)
             mlflow.log_metric("auc_roc", auc)
-            mlflow.log_metric("training_samples", len(X))
+            mlflow.log_metric("training_samples", len(X_train))
 
             # UC exige signature (input/output schema) em todo modelo registrado
             from mlflow.models.signature import infer_signature
-            signature = infer_signature(X, y_pred_proba)
-            input_example = X.head(5)
+            signature = infer_signature(X_train, model.predict_proba(X_train))
+            input_example = X_train.head(5)
 
             # Log model
             mlflow.xgboost.log_model(
@@ -381,16 +411,34 @@ def compare_models(model_name: str, new_run_id: str) -> dict:
             print(f"   ⚠️ NO PROMOTION: Improvement {comparison['accuracy_delta']:.2%} < threshold {PERFORMANCE_THRESHOLD:.2%}")
         
         return comparison
-    
-    except Exception as e:
-        print(f"⚠️ Error comparing models: {e}")
-        # If champion not found, promote new model by default
+
+    except MlflowException as e:
+        # get_model_version_by_alias lança MlflowException quando o alias
+        # "champion" não existe ainda — isso É esperado na primeira execução,
+        # então promover sem comparação é correto aqui.
+        print(f"ℹ️ Nenhum @champion encontrado ainda ({e}) — promovendo por ser a primeira versão.")
+        new_run = mlflow.get_run(new_run_id)
+        new_accuracy = new_run.data.metrics.get('accuracy', 0.0)
         return {
             'model_name': model_name,
             'champion_accuracy': 0.0,
-            'new_accuracy': 0.85,
-            'accuracy_delta': 0.85,
+            'new_accuracy': new_accuracy,
+            'accuracy_delta': new_accuracy,
             'should_promote': True
+        }
+
+    except Exception as e:
+        # Qualquer outro erro (rede, MLflow indisponível, etc.) — antes isso
+        # caía no mesmo "promove por padrão" do caso acima, o que é perigoso:
+        # um erro transiente promoveria um modelo sem nenhuma comparação real.
+        # Falhar seguro (não promover) é o comportamento correto aqui.
+        print(f"❌ Erro inesperado comparando modelos: {e} — NÃO promovendo por segurança.")
+        return {
+            'model_name': model_name,
+            'champion_accuracy': 0.0,
+            'new_accuracy': 0.0,
+            'accuracy_delta': 0.0,
+            'should_promote': False
         }
 
 print("✅ Model comparison engine ready")
