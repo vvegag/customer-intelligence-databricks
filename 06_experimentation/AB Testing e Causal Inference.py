@@ -155,6 +155,58 @@ df_lift.select(
 
 # COMMAND ----------
 
+# DBTITLE 1,3.1 Checagem de SRM (Sample Ratio Mismatch)
+# Antes de confiar em qualquer resultado de lift/significância, valida se a
+# proporção OBSERVADA de Controle/Tratamento bate com o desenho do
+# experimento. O gerador de dados usa F.rand(seed=45) < 0.3
+# (01_bronze/Ingestao Dados Bronze.py:277) — ou seja, o desenho real é 30%
+# controle / 70% tratamento, não 50/50. SRM detectado indica problema na
+# randomização/coleta (ex: bug de atribuição, bot filtrando um grupo mais que
+# outro) — os resultados de lift ficam não confiáveis até isso ser investigado.
+EXPECTED_CONTROL_RATIO = 0.30  # ver 01_bronze/Ingestao Dados Bronze.py:277
+SRM_P_VALUE_THRESHOLD = 0.01  # mais rígido que 0.05: SRM deveria ser raro sob randomização correta
+
+df_srm_pd = df_pivot.select("campaign_id", "campaign_name", "Control_customers", "Treatment_customers").toPandas()
+
+srm_results = []
+for _, row in df_srm_pd.iterrows():
+    n_control = row["Control_customers"] or 0
+    n_treatment = row["Treatment_customers"] or 0
+    total = n_control + n_treatment
+
+    if total == 0:
+        continue
+
+    expected = [total * EXPECTED_CONTROL_RATIO, total * (1 - EXPECTED_CONTROL_RATIO)]
+    chi2_srm, p_value_srm = stats.chisquare([n_control, n_treatment], f_exp=expected)
+
+    srm_results.append({
+        "campaign_id": row["campaign_id"],
+        "campaign_name": row["campaign_name"],
+        "n_control": int(n_control),
+        "n_treatment": int(n_treatment),
+        "observed_control_ratio": round(n_control / total, 4),
+        "expected_control_ratio": EXPECTED_CONTROL_RATIO,
+        "p_value_srm": round(p_value_srm, 4),
+        "srm_detected": p_value_srm < SRM_P_VALUE_THRESHOLD
+    })
+
+df_srm = pd.DataFrame(srm_results)
+print("\n" + "="*80)
+print("CHECAGEM DE SRM (Sample Ratio Mismatch)")
+print("="*80)
+print(df_srm.to_string(index=False))
+
+campanhas_com_srm = df_srm[df_srm["srm_detected"]]["campaign_name"].tolist()
+if campanhas_com_srm:
+    print(f"\n⚠️ SRM detectado em {len(campanhas_com_srm)} campanha(s): {campanhas_com_srm}")
+    print("   Resultados de lift/significância dessas campanhas não são confiáveis")
+    print("   até a causa do desbalanceamento ser investigada (randomização/coleta).")
+else:
+    print("\n✓ Nenhum SRM detectado — proporção observada bate com o desenho do experimento.")
+
+# COMMAND ----------
+
 # DBTITLE 1,4. Teste de Significância Estatística
 # Converter para Pandas para testes estatísticos
 df_experiment_pd = df_experiment.select(
@@ -194,12 +246,28 @@ for campaign_id in df_experiment_pd["campaign_id"].unique():
             "chi2_statistic": round(chi2, 3)
         })
 
-df_significance = spark.createDataFrame(pd.DataFrame(significance_results))
+# Correção de múltiplas comparações: N campanhas x 2 testes cada, todos contra
+# p<0.05 sem correção, infla a taxa de falso-positivo conforme N cresce (family-
+# wise error rate). Benjamini-Hochberg (FDR) é o padrão pra esse cenário
+# exploratório — menos conservador que Bonferroni, que seria adequado demais
+# pra um cenário onde perder um resultado real (falso-negativo) também tem custo.
+# Mantém o resultado bruto (is_significant_chi2) ao lado do corrigido — mesmo
+# espírito "comparação, não substituição" já usado em outras partes do projeto.
+from statsmodels.stats.multitest import multipletests
+
+df_significance_pd = pd.DataFrame(significance_results)
+if len(df_significance_pd) > 0:
+    _, p_values_fdr, _, _ = multipletests(df_significance_pd["p_value_chi2"], method="fdr_bh")
+    df_significance_pd["p_value_chi2_fdr"] = p_values_fdr.round(4)
+    df_significance_pd["is_significant_chi2_fdr"] = p_values_fdr < 0.05
+
+df_significance = spark.createDataFrame(df_significance_pd)
 
 print("\n" + "="*80)
 print("TESTE DE SIGNIFICÂNCIA ESTATÍSTICA")
 print("="*80)
-print("\np-value < 0.05 = Estatisticamente significante")
+print("\np-value < 0.05 = Estatisticamente significante (bruto, sem correção)")
+print("p_value_chi2_fdr = corrigido por Benjamini-Hochberg (FDR) para múltiplas comparações")
 df_significance.show(20, truncate=False)
 
 # COMMAND ----------
@@ -208,17 +276,20 @@ df_significance.show(20, truncate=False)
 # Juntar lift com significância
 df_experiment_results = df_lift.join(df_significance, "campaign_id", "left")
 
-# Adicionar classificação de resultado
+# Adicionar classificação de resultado — usa is_significant_chi2_fdr (corrigido
+# por múltiplas comparações), não o p-value bruto, pra evitar classificar como
+# "Positive"/"Negative" uma campanha que só parece significante por acaso
+# quando testamos várias campanhas ao mesmo tempo.
 df_experiment_results = df_experiment_results.withColumn(
     "result_category",
     F.when(
-        (F.col("is_significant_chi2") == True) & (F.col("lift_pct") > 10),
+        (F.col("is_significant_chi2_fdr") == True) & (F.col("lift_pct") > 10),
         "Strong Positive"
     ).when(
-        (F.col("is_significant_chi2") == True) & (F.col("lift_pct") > 0),
+        (F.col("is_significant_chi2_fdr") == True) & (F.col("lift_pct") > 0),
         "Positive"
     ).when(
-        (F.col("is_significant_chi2") == True) & (F.col("lift_pct") < 0),
+        (F.col("is_significant_chi2_fdr") == True) & (F.col("lift_pct") < 0),
         "Negative"
     ).otherwise("Not Significant")
 )
