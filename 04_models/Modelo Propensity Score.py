@@ -86,10 +86,94 @@ df_recent_buyers = df_transactions.filter(F.col("transaction_date") >= cutoff_da
 # Adiciona uma coluna 'purchased_last_30d' com valor 1 para clientes que compraram nos últimos 30 dias
 df_recent_buyers = df_recent_buyers.withColumn("purchased_last_30d", F.lit(1))
 
-df_features = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_features"))
-df_propensity = df_features.join(df_recent_buyers, "customer_id", "left").fillna({"purchased_last_30d": 0})
+print(f"✓ Target criado: {df_recent_buyers.count():,} compraram")
 
-print(f"✓ Target criado: {df_propensity.filter(F.col('purchased_last_30d') == 1).count():,} compraram")
+# COMMAND ----------
+
+# DBTITLE 1,Features de Treino (ponto-no-tempo, sem vazamento)
+# IMPORTANTE — vazamento temporal (corrigido nesta versão): antes, as features de
+# treino vinham direto de gold.customer_features, que é sempre "estado atual
+# calculado até max_date" (03_gold/Feature Engineering Gold.py — reference_date
+# global, sem corte por cliente). Como o alvo é "comprou entre
+# cutoff_date=max_date-30d e max_date", quem comprou nessa janela já tinha
+# recency_days baixo quase por definição — o modelo aprendia a sobreposição
+# temporal entre feature e alvo, não comportamento preditivo real.
+#
+# A correção: para TREINO, recalcular RFM/comportamental/campanhas usando
+# só dado anterior a cutoff_date (ponto-no-tempo, "como estava antes da janela
+# que queremos prever") — duplica a lógica de agregação de
+# Feature Engineering Gold.py (mesma convenção de helper duplicado já usada no
+# projeto), mas parametrizada por data de corte em vez de reference_date global.
+# Para SCORING (célula "Salvar Scores", mais abaixo), continua correto usar
+# gold.customer_features (estado atual) — ali estamos prevendo o futuro de
+# verdade a partir do presente, não há look-ahead.
+df_events = spark.table(get_full_table_name(SCHEMA_SILVER, "behavioral_events"))
+df_exposures = spark.table(get_full_table_name(SCHEMA_SILVER, "campaign_exposures"))
+df_responses = spark.table(get_full_table_name(SCHEMA_SILVER, "campaign_responses"))
+df_customers = spark.table(get_full_table_name(SCHEMA_SILVER, "customers"))
+
+
+def calcular_features_point_in_time(df_transactions, df_events, df_exposures, df_responses, df_customers, data_corte):
+    """RFM + comportamental 30d + campanhas, calculados só com dado anterior a
+    data_corte (exclusive) — mesma agregação de Feature Engineering Gold.py,
+    parametrizada por corte em vez do reference_date global do notebook Gold."""
+    df_transacoes_ate_corte = df_transactions.filter(F.col("transaction_date") < data_corte)
+    df_rfm = df_transacoes_ate_corte.groupBy("customer_id").agg(
+        F.datediff(F.lit(data_corte), F.max("transaction_date")).alias("recency_days"),
+        F.count("transaction_id").alias("frequency"),
+        F.sum("total_amount").alias("monetary_total"),
+        F.avg("total_amount").alias("monetary_avg"),
+    )
+
+    inicio_janela_30d = data_corte - pd.Timedelta(days=30)
+    df_eventos_janela = df_events.filter(
+        (F.col("event_date_only") >= inicio_janela_30d) & (F.col("event_date_only") < data_corte)
+    )
+    df_behavioral = df_eventos_janela.groupBy("customer_id").agg(
+        F.count("event_id").alias("event_count_30d"),
+        F.countDistinct("session_id").alias("session_count_30d"),
+        F.sum("event_value").alias("engagement_score_30d"),
+        F.sum(F.when(F.col("event_type") == "page_view", 1).otherwise(0)).alias("page_views_30d"),
+        F.sum(F.when(F.col("event_type") == "product_view", 1).otherwise(0)).alias("product_views_30d"),
+        F.sum(F.when(F.col("event_type") == "add_to_cart", 1).otherwise(0)).alias("add_to_cart_30d"),
+    )
+
+    df_exposicoes_ate_corte = df_exposures.filter(F.col("exposure_date") < data_corte)
+    df_respostas_ate_corte = df_responses.filter(F.col("response_date") < data_corte)
+    df_campanhas = df_exposicoes_ate_corte.groupBy("customer_id").agg(
+        F.count("exposure_id").alias("total_campaigns_exposed")
+    )
+    df_respostas_agg = df_respostas_ate_corte.groupBy("customer_id").agg(
+        F.count("response_id").alias("total_responses"),
+        F.sum("is_conversion").alias("total_conversions")
+    )
+    df_campanhas = df_campanhas.join(df_respostas_agg, "customer_id", "left")
+    df_campanhas = df_campanhas.withColumn(
+        "response_rate",
+        F.when(F.col("total_campaigns_exposed") > 0,
+               F.col("total_responses") / F.col("total_campaigns_exposed")).otherwise(0)
+    ).withColumn(
+        "conversion_rate",
+        F.when(F.col("total_campaigns_exposed") > 0,
+               F.col("total_conversions") / F.col("total_campaigns_exposed")).otherwise(0)
+    )
+
+    df_resultado = df_customers.select("customer_id") \
+        .join(df_rfm, "customer_id", "left") \
+        .join(df_behavioral, "customer_id", "left") \
+        .join(df_campanhas, "customer_id", "left")
+
+    for c in df_resultado.columns:
+        if c != "customer_id":
+            df_resultado = df_resultado.fillna({c: 0})
+    return df_resultado
+
+
+df_features_treino = calcular_features_point_in_time(
+    df_transactions, df_events, df_exposures, df_responses, df_customers, data_corte=cutoff_date
+)
+df_propensity_treino = df_features_treino.join(df_recent_buyers, "customer_id", "left") \
+    .fillna({"purchased_last_30d": 0})
 
 # COMMAND ----------
 
@@ -103,7 +187,7 @@ feature_cols = [
 
 # .toPandas() traz pro driver — trivial em N=10k, mas é o teto de escala deste
 # notebook. Ver production/models/sparkml_distributed.py pro caminho distribuído.
-df_pandas = df_propensity.select(["customer_id"] + feature_cols + ["purchased_last_30d"]).fillna(0).toPandas()
+df_pandas = df_propensity_treino.select(["customer_id"] + feature_cols + ["purchased_last_30d"]).fillna(0).toPandas()
 X = df_pandas[feature_cols]
 y = df_pandas["purchased_last_30d"]
 
@@ -189,16 +273,22 @@ for k, v in metrics.items():
 # COMMAND ----------
 
 # DBTITLE 1,Salvar Scores
-# Score todos os clientes
+# Score todos os clientes usando o ESTADO ATUAL (gold.customer_features), não o
+# dataframe de treino ponto-no-tempo — aqui estamos prevendo os próximos 30 dias
+# de verdade a partir de hoje, então usar a feature mais recente é correto (não é
+# o mesmo vazamento da célula de treino: não há look-ahead, o alvo é futuro
+# desconhecido, não um resultado que já aconteceu no passado).
 # predict_proba()[:, 1] = Probabilidade da classe positiva (comprou = 1)
 # Isso é o "propensity score" - quanto maior, mais propensão de compra
-X_all = df_pandas[feature_cols]
+df_features_atual = spark.table(get_full_table_name(SCHEMA_GOLD, "customer_features"))
+df_pandas_atual = df_features_atual.select(["customer_id"] + feature_cols).fillna(0).toPandas()
+X_all = df_pandas_atual[feature_cols]
 propensity_scores = model.predict_proba(X_all)[:, 1]  # Valores entre 0.0 e 1.0
 
-df_pandas["propensity_score"] = propensity_scores
-df_pandas["propensity_category"] = pd.cut(propensity_scores, bins=[0, 0.3, 0.7, 1.0], labels=["Low", "Medium", "High"])
+df_pandas_atual["propensity_score"] = propensity_scores
+df_pandas_atual["propensity_category"] = pd.cut(propensity_scores, bins=[0, 0.3, 0.7, 1.0], labels=["Low", "Medium", "High"])
 
-df_scores = df_pandas[["customer_id", "propensity_score", "propensity_category"]]
+df_scores = df_pandas_atual[["customer_id", "propensity_score", "propensity_category"]]
 df_scores_spark = spark.createDataFrame(df_scores)
 create_or_replace_table(df_scores_spark, SCHEMA_GOLD, "propensity_scores")
 

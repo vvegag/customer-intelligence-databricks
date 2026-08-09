@@ -13,11 +13,18 @@ pegar regressão futura desse mesmo bug — se alguém reintroduzir
 recency_days/frequency em feature_cols, ou expandir a fórmula do rótulo pra
 incluir outra coluna que já é feature, o teste falha.
 
-Escopo desta rodada: só o modelo de Churn. O Propensity Score tem um
-vazamento análogo (mas por sobreposição de janela temporal, não por coluna
-literal repetida) — não dá pra checar estaticamente sem antes redesenhar a
-computação de RFM ponto-no-tempo; fica documentado como próximo passo no
-plano, não coberto aqui.
+O Propensity Score tinha um vazamento análogo, mas por sobreposição de janela
+temporal (não por coluna literal repetida): o alvo `purchased_last_30d` e as
+features de treino eram calculados na mesma data de referência, sem corte
+temporal. Corrigido em "04_models/Modelo Propensity Score.py" recalculando as
+features de treino ponto-no-tempo (só dado anterior a `cutoff_date`) via
+`calcular_features_point_in_time`. O teste
+`test_propensity_usa_features_point_in_time_no_treino`, abaixo, garante que
+essa correção não seja revertida sem querer — não dá pra checar via
+interseção feature∩label como no Churn (não é uma coluna repetida, é uma
+questão de QUANDO a feature foi calculada), então o teste checa que a função
+de corte temporal existe, é chamada com `cutoff_date` (não `max_date`), e
+essa chamada acontece antes do `train_test_split` usado pra treinar.
 """
 import re
 from pathlib import Path
@@ -31,6 +38,7 @@ CHURN_MODEL_FILES = [
     REPO_ROOT / "05_scoring" / "Batch Scoring.py",
     REPO_ROOT / "04_models" / "Model_Explainability_SHAP.py",
 ]
+PROPENSITY_MODEL_FILE = REPO_ROOT / "04_models" / "Modelo Propensity Score.py"
 
 
 def _extract_churn_label_source_columns() -> set[str]:
@@ -88,3 +96,48 @@ def test_no_feature_overlaps_churn_label():
             "vazamento de rótulo (o modelo aprende a fórmula do rótulo, não "
             "comportamento preditivo real)."
         )
+
+
+def test_propensity_usa_features_point_in_time_no_treino():
+    """Garante que o Propensity continua treinando com features recalculadas
+    ponto-no-tempo (data de corte), não com o estado atual de
+    gold.customer_features — a diferença entre os dois é exatamente o que
+    corrigiu o vazamento temporal (ver docstring do módulo)."""
+    assert PROPENSITY_MODEL_FILE.exists(), f"Arquivo esperado não existe: {PROPENSITY_MODEL_FILE}"
+    source = PROPENSITY_MODEL_FILE.read_text(encoding="utf-8")
+
+    assert "def calcular_features_point_in_time(" in source, (
+        "Não encontrei calcular_features_point_in_time em "
+        f"{PROPENSITY_MODEL_FILE.name} — a correção de vazamento temporal foi "
+        "removida ou renomeada?"
+    )
+
+    call_marker = "calcular_features_point_in_time(\n    df_transactions"
+    call_idx = source.find(call_marker)
+    assert call_idx != -1, (
+        "Não encontrei a chamada de calcular_features_point_in_time() para "
+        "montar as features de treino."
+    )
+
+    split_idx = source.find("train_test_split(X, y")
+    assert split_idx != -1, "Não encontrei o train_test_split(X, y, ...) esperado."
+
+    assert call_idx < split_idx, (
+        "calcular_features_point_in_time() precisa ser chamada ANTES do "
+        "train_test_split que gera X_train/X_test — do jeito que está, o "
+        "treino pode estar usando features não recalculadas ponto-no-tempo."
+    )
+
+    # A chamada precisa usar cutoff_date (ponto-no-tempo), não max_date (estado atual)
+    call_end = source.find(")", call_idx)
+    trecho_chamada = source[call_idx:call_end]
+    assert "cutoff_date" in trecho_chamada, (
+        "A chamada de calcular_features_point_in_time() não referencia "
+        "cutoff_date — sem isso, as features de treino voltam a usar a data "
+        "de referência global (o mesmo vazamento de antes)."
+    )
+    assert "max_date" not in trecho_chamada.split("data_corte=")[-1], (
+        "A chamada de calcular_features_point_in_time() parece estar usando "
+        "max_date como data de corte, em vez de cutoff_date — isso reintroduz "
+        "o vazamento temporal."
+    )
