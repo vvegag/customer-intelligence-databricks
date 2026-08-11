@@ -189,6 +189,20 @@ Output: Alocação dinâmica de tráfego (vs. A/B estático) — parte 1 usa os 
         multi-braço claramente rotulada como sintética
 ```
 
+### Bandit Contextual — Personalização em Tempo Real
+```bash
+Abra: 06_experimentation/Bandit Contextual - Personalizacao em Tempo Real
+Clique: Run All
+Tempo: ~2 minutos
+Output: LinUCB + Thompson linear (regressão ridge por braço) — seção 1 ajusta
+        no dado real e reporta que o contexto não muda a decisão (esperado,
+        dataset sintético sem heterogeneidade); seção 2 é uma simulação
+        didática claramente rotulada, com heterogeneidade real, comparando
+        bandit contextual vs. não-contextual vs. aleatório; seção 3 mostra
+        avaliação off-policy (IPS) para validar uma política nova sem rodá-la
+        ao vivo
+```
+
 ### Scoring em Lote
 ```bash
 Abra: 05_scoring/Batch Scoring
@@ -246,7 +260,8 @@ Duas formas de rodar o pipeline principal de ponta a ponta:
    ↓
 6. Batch Scoring        (requer Churn já treinado)
    ↓
-7. A/B Testing / Thompson Sampling (independentes, qualquer momento)
+7. A/B Testing / Thompson Sampling (independentes, qualquer momento) ·
+   Bandit Contextual (requer Gold Feature Engineering já rodado, usa customer_features como contexto)
    ↓
 8. Monitoring (+ Delta Maintenance: OPTIMIZE/ZORDER/VACUUM)
 ```
@@ -351,7 +366,7 @@ customer-intelligence-databricks/
 │                         # Recomendação, Ativação Saldo Dormente, Forecast GMV,
 │                         # AutoML, Retraining, SHAP, Model Serving
 ├── 05_scoring/          # Batch scoring
-├── 06_experimentation/  # A/B Testing + Multi-Armed Bandit (Thompson Sampling)
+├── 06_experimentation/  # A/B Testing + Multi-Armed Bandit + Bandit Contextual (LinUCB)
 ├── 07_monitoring/       # Drift, KPIs, alertas, Delta Maintenance
 ├── 08_dashboards/       # SQL queries
 ├── 09_integrations/     # CRM

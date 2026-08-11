@@ -66,7 +66,8 @@ customer-intelligence-databricks/
 │   └── Batch Scoring.py                       # Scoring em lote
 ├── 06_experimentation/
 │   ├── AB Testing e Causal Inference.py       # Controle vs Tratamento, Lift, ROAS
-│   └── Multi-Armed Bandit - Thompson Sampling.py  # Alocação dinâmica de tráfego
+│   ├── Multi-Armed Bandit - Thompson Sampling.py  # Alocação dinâmica de tráfego (sem contexto)
+│   └── Bandit Contextual - Personalizacao em Tempo Real.py  # LinUCB/Thompson linear + avaliação off-policy (IPS)
 ├── 07_monitoring/
 │   └── Monitoramento Performance.py           # Drift detection, KPIs
 ├── 08_dashboards/
