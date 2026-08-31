@@ -121,8 +121,9 @@ Output: Forecast real semanal + mensal (Prophet) + Real vs. Meta + comparação
         Prophet/SARIMA semanal (m=52) e mensal (m=12) com calendário comercial
         (seção ilustrativa) + 4 tabelas Gold pra dashboards futuros
 ```
-Metodologia adaptada de um forecast real usado em produção na CRMBonus — só a
-técnica foi trazida, sem nenhum dado/tabela/número/cliente real. Dado real
+Metodologia adaptada de um forecast real usado em produção numa empresa
+anterior do setor de fidelidade/cashback — só a técnica foi trazida, sem
+nenhum dado/tabela/número/cliente real. Dado real
 agora cobre ~4 anos (janela estendida em `01_bronze/Ingestao Dados Bronze.py`,
 `DATA_BASE`/`JANELA_DIAS`), pra dar tanto visão semanal (operacional) quanto
 mensal (estratégica/meta) com histórico suficiente. 7 seções:

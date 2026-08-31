@@ -3,7 +3,8 @@
 ## 🎯 Contexto e Objetivo
 
 Este projeto reconstrói, com dados sintéticos, o tipo de trabalho de Customer
-Intelligence que meu time fazia na CRMBonus: um time dividido por especialidade
+Intelligence que meu time fazia numa empresa anterior do setor de
+fidelidade/cashback: um time dividido por especialidade
 (um colega focado em propensão, outro em churn, eu concentrado em **segmentação
 e testes A/B/inferência causal**), colaborando de perto e com conhecimento real
 das bases — volume de linhas, características dos usuários, comportamento de
@@ -16,7 +17,7 @@ Cobre:
 - **Churn Prediction**: Identificar clientes com risco de cancelamento
 - **Propensity Modeling**: Prever probabilidade de compra/renovação
 - **Recommendation**: Sugerir próxima melhor ação
-- **Segmentation**: Agrupar clientes por comportamento (RFM) — minha frente principal na CRMBonus
+- **Segmentation**: Agrupar clientes por comportamento (RFM) — minha frente principal nesse time
 - **A/B Testing**: Medir efetividade de campanhas com grupos controle/tratamento — idem
 - **Causal Inference**: Entender impacto causal de ações de marketing
 
