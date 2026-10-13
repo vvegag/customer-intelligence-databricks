@@ -25,6 +25,43 @@ Cobre:
 
 ## 📊 Arquitetura Medallion
 
+```mermaid
+flowchart LR
+    subgraph Bronze["🥉 Bronze"]
+        B1["Ingestão / Simulação"]
+    end
+    subgraph Silver["🥈 Silver"]
+        S1["Limpeza + Validação<br/>(Data Quality Gate)"]
+    end
+    subgraph Gold["🥇 Gold"]
+        G1["RFM + Behavioral<br/>+ Campaign Features"]
+    end
+    subgraph Models["🤖 Models & Scoring"]
+        M1["Churn / Propensity"]
+        M2["Segmentação / Recomendação"]
+        M3["Forecast GMV"]
+        M4["Batch Scoring"]
+    end
+    subgraph Exp["🧪 Experimentação"]
+        E1["A/B Testing"]
+        E2["Bandit Contextual"]
+    end
+    subgraph Ops["📡 MLOps"]
+        O1["Model Registry<br/>(Champion/Challenger)"]
+        O2["Monitoring<br/>(Drift / PSI)"]
+        O3["Retraining Automático"]
+    end
+
+    B1 --> S1 --> G1
+    G1 --> M1
+    G1 --> M2
+    G1 --> M3
+    M1 --> M4
+    G1 --> E1
+    G1 --> E2
+    M1 --> O1 --> O2 --> O3 --> M1
+```
+
 ```
 Bronze (Raw Data)     →     Silver (Clean)     →     Gold (Features & Scores)
       ↓                           ↓                          ↓
